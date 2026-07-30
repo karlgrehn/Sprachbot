@@ -1,9 +1,16 @@
-import { invoke } from "@tauri-apps/api/core";
+// Iris-Oberfläche: spricht ausschließlich über HTTP mit dem lokalen Kern
+// (src-tauri/src/api.rs), nie über Tauri-`invoke`. Damit ist dieselbe
+// Oberfläche später ohne Änderung als Thin Client über Tailscale nutzbar
+// (siehe docs/PLAN.md, Abschnitt 3).
 
-interface ModelRecommendation {
+// Muss mit PORT in src-tauri/src/api.rs übereinstimmen.
+const API_BASE = "http://127.0.0.1:47615";
+
+interface StatusResponse {
   ram_gb: number;
   tier: string;
-  model: string;
+  recommended_model: string;
+  ollama_available: boolean;
 }
 
 let statusEl: HTMLElement | null;
@@ -35,37 +42,53 @@ function populateModelSelect(installed: string[], recommended: string) {
   }
 }
 
-async function init() {
-  const recommendation = await invoke<ModelRecommendation>("recommend_model");
-  const available = await invoke<boolean>("ollama_status");
+// Der Kern startet als eigener HTTP-Dienst nebenläufig zum Fenster; ein
+// kurzer Retry-Loop überbrückt die seltene Sekunde, bevor er antwortet.
+async function fetchWithRetry(path: string, attempts = 10): Promise<Response> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(`${API_BASE}${path}`);
+    } catch (err) {
+      if (i === attempts - 1) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+  throw new Error("unreachable");
+}
 
-  if (!available) {
+async function init() {
+  setStatus("Prüfe Iris-Kern …");
+  const statusResp = await fetchWithRetry("/api/status");
+  const status: StatusResponse = await statusResp.json();
+
+  if (!status.ollama_available) {
     setStatus(
-      `Ollama läuft nicht auf diesem Gerät. Empfohlenes Modell für ${recommendation.ram_gb.toFixed(
+      `Ollama läuft nicht auf diesem Gerät. Empfohlenes Modell für ${status.ram_gb.toFixed(
         1,
-      )} GB RAM: ${recommendation.model}. Bitte Ollama starten.`,
+      )} GB RAM: ${status.recommended_model}. Bitte Ollama starten.`,
     );
     if (sendButton) sendButton.disabled = true;
-    populateModelSelect([], recommendation.model);
+    populateModelSelect([], status.recommended_model);
     return;
   }
 
-  const installed = await invoke<string[]>("list_models");
-  populateModelSelect(installed, recommendation.model);
+  const modelsResp = await fetch(`${API_BASE}/api/models`);
+  const installed: string[] = await modelsResp.json();
+  populateModelSelect(installed, status.recommended_model);
 
   if (installed.length === 0) {
     setStatus(
-      `Ollama läuft, aber kein Modell installiert. Empfehlung für ${recommendation.ram_gb.toFixed(
+      `Ollama läuft, aber kein Modell installiert. Empfehlung für ${status.ram_gb.toFixed(
         1,
-      )} GB RAM: ollama pull ${recommendation.model}`,
+      )} GB RAM: ollama pull ${status.recommended_model}`,
     );
     if (sendButton) sendButton.disabled = true;
     return;
   }
 
   setStatus(
-    `Bereit. ${recommendation.ram_gb.toFixed(1)} GB RAM erkannt, empfohlenes Modell: ${
-      recommendation.model
+    `Bereit. ${status.ram_gb.toFixed(1)} GB RAM erkannt, empfohlenes Modell: ${
+      status.recommended_model
     }.`,
   );
 }
@@ -79,11 +102,16 @@ async function ask() {
   outputEl.textContent = "Iris denkt nach …";
 
   try {
-    const answer = await invoke<string>("ask", {
-      model: modelSelect.value,
-      prompt,
+    const resp = await fetch(`${API_BASE}/api/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: modelSelect.value, prompt }),
     });
-    outputEl.textContent = answer;
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+    const { response } = await resp.json();
+    outputEl.textContent = response;
   } catch (err) {
     outputEl.textContent = `Fehler: ${err}`;
   } finally {
