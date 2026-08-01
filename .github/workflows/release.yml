@@ -1,0 +1,66 @@
+name: Release
+
+# Baut die echte Iris-App, weil das in keiner Sandbox möglich ist (fehlendes
+# WebKitGTK/Windows-Toolchain) — siehe README, Abschnitt "Bekannte
+# Einschränkung dieser Sandbox". Läuft auf echten GitHub-Runnern mit den
+# richtigen Systemvoraussetzungen für Windows und Linux.
+#
+# Auslösen: manuell über "Run workflow" im Actions-Tab, oder durch einen
+# Tag-Push (z. B. `git tag v0.1.0 && git push origin v0.1.0`).
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+          - platform: ubuntu-22.04
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux-Systempakete installieren (WebKitGTK, nur ubuntu-latest)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Frontend-Abhängigkeiten installieren
+        run: npm install
+
+      - name: Release-Tag bestimmen
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=iris-build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ steps.tag.outputs.name }}
+          releaseName: "Iris (Vorabversion)"
+          releaseBody: |
+            Automatisch gebaut. M1–M3 (siehe docs/PLAN.md) — Kern, lokales
+            Modell, Aktions-Registry, MCP-Client. Erfordert eine laufende
+            Ollama-Installation auf dem Zielrechner.
+          releaseDraft: true
+          prerelease: true

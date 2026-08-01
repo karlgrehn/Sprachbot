@@ -104,6 +104,30 @@ M1 gilt erst als fertig, wenn das auf einem echten Rechner mit installiertem
 Ollama getestet wurde — das kann in dieser Sandbox nicht verifiziert werden
 (siehe Abschnitt „Bekannte Einschränkung dieser Sandbox" unten).
 
+## Download / Release-Build
+
+Es gibt noch keinen veröffentlichten Download. Kein Sandbox-Build kann eine
+echte Windows-`.exe` erzeugen (dafür fehlt der Windows-Toolchain) oder auch
+nur den Linux-Build durchlaufen lassen (fehlendes WebKitGTK, siehe unten) —
+`.github/workflows/release.yml` löst das, indem es auf echten
+GitHub-Runnern (Windows + Linux) baut, mit den dort tatsächlich
+installierten Systemvoraussetzungen.
+
+Auslösen:
+- **Manuell**: Im GitHub-Repo unter „Actions" → „Release" → „Run workflow".
+- **Per Tag**: `git tag v0.1.0 && git push origin v0.1.0`.
+
+Das Ergebnis landet als **Entwurf** (`releaseDraft: true`) unter „Releases"
+im Repo — mit einer echten `.exe`/`.msi` (Windows) und einem `.AppImage`
+(Linux) als Anhang. Ein Entwurf ist bewusst nicht sofort öffentlich; ihn zu
+veröffentlichen ist eine eigene, manuelle Entscheidung.
+
+**Vercel eignet sich nicht, um die App selbst zu hosten** — Vercel baut und
+hostet Web-Apps/statische Seiten, keine nativen Desktop-Programme. Was
+Vercel leisten könnte: eine schlichte Download-Seite, die auf den jeweils
+neuesten GitHub-Release-Anhang verlinkt. Das würde eine eigene, von dir
+autorisierte Vercel-Verbindung voraussetzen.
+
 ## Voraussetzungen
 
 - [Rust](https://rustup.rs/) (stable)
