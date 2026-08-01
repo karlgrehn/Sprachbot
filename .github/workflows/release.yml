@@ -18,13 +18,23 @@ name: Release
 # Auslösen: manuell über "Run workflow" im Actions-Tab, oder durch einen
 # Tag-Push (z. B. `git tag v0.1.0 && git push origin v0.1.0`).
 #
-# Öffentliche Downloads laufen über S3-kompatiblen Objektspeicher, nicht
-# über GitHub Releases (siehe README, Abschnitt "Download-Hosting") — das
-# Repo kann dadurch privat bleiben. Nötige Secrets, falls eingerichtet:
-#   S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_PUBLIC_BASE_URL,
-#   optional S3_ENDPOINT (leer lassen für echtes AWS S3; sonst z. B. die
-#   R2-Endpunkt-URL). Ohne diese Secrets läuft der Build durch, aber der
-#   Upload-Schritt wird übersprungen.
+# Öffentliche Downloads sollen langfristig über S3-kompatiblen
+# Objektspeicher laufen, nicht über GitHub Releases (siehe README,
+# Abschnitt "Download-Hosting") — das Repo kann dadurch privat bleiben.
+# Nötige Secrets, falls eingerichtet: S3_BUCKET, S3_ACCESS_KEY_ID,
+# S3_SECRET_ACCESS_KEY, S3_PUBLIC_BASE_URL, optional S3_ENDPOINT (leer
+# lassen für echtes AWS S3; sonst z. B. die R2-Endpunkt-URL). Ohne diese
+# Secrets läuft der Build durch, aber der S3-Upload-Schritt wird
+# übersprungen.
+#
+# Solange S3 nicht eingerichtet ist, veröffentlicht der Workflow
+# zusätzlich eine echte (nicht mehr Entwurf-)GitHub-Release mit allen
+# Dateien (Windows/Linux normal+offline, Android-APK) - die Landingpage
+# (web/index.html) liest diese über die öffentliche GitHub-Releases-API,
+# wenn kein S3_PUBLIC_BASE_URL gesetzt ist. Das funktioniert nur, solange
+# das Repo öffentlich ist (private Repos liefern keine öffentlich
+# abrufbaren Release-Assets) - sobald das Repo privat gestellt wird, ist
+# S3 der einzige verbleibende Downloadweg.
 
 on:
   workflow_dispatch:
@@ -212,6 +222,29 @@ jobs:
           echo "--- Enthält 'ollama' oder 'lib' oder 'bundled-model' oder 'dist' ---"
           find src-tauri/target/release -iname "*ollama*" -o -iname "bundled-model" -o -iname "dist" 2>/dev/null | grep -v -E "/(deps|build|\.fingerprint|incremental)/" | sort
 
+      # Solange S3 nicht eingerichtet ist (siehe unten), ist das hier der
+      # einzige öffentlich abrufbare Downloadweg für die Offline-Variante -
+      # tauri-action lädt oben automatisch nur die NORMALE Variante hoch,
+      # die Offline-Variante entsteht erst danach. Sobald S3 eingerichtet
+      # ist, bleibt dieser Schritt als zusätzlicher, redundanter Downloadweg
+      # bestehen (schadet nicht, kostet nur etwas Runner-Zeit).
+      - name: Offline-Variante zur GitHub-Release hochladen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "${{ matrix.platform }}" in
+            windows-latest)
+              OFFLINE_FILE=$(find src-tauri/target/release/bundle/nsis -iname "Iris-Offline_*.exe" | head -1)
+              ;;
+            ubuntu-22.04)
+              OFFLINE_FILE=$(find src-tauri/target/release/bundle/appimage -iname "Iris-Offline_*.AppImage" | head -1)
+              ;;
+          esac
+          gh release upload "${{ steps.tag.outputs.name }}" "$OFFLINE_FILE" \
+            --repo "${{ github.repository }}" --clobber
+
       # --- Beide Varianten zu S3-kompatiblem Speicher hochladen ---
       - name: Nach S3-kompatiblem Speicher hochladen
         if: env.S3_BUCKET != ''
@@ -280,6 +313,11 @@ jobs:
   # Installieren eine "Unbekannte Quelle/Entwickler"-Warnung; das ist
   # erwartet und Android selbst, nicht behebbar ohne Play-Store-Eintrag.
   release-android:
+    # Braucht die von "release" (tauri-action) angelegte Release fürs
+    # aktuelle Tag, bevor "APK zur GitHub-Release hochladen" ein Asset
+    # anhängen kann - ohne dieses "needs" liefe der Job parallel und könnte
+    # das Hochladen versuchen, bevor die Release überhaupt existiert.
+    needs: release
     permissions:
       contents: write
     runs-on: ubuntu-22.04
@@ -388,6 +426,21 @@ jobs:
           echo "APK gefunden: $APK ($(stat -c%s "$APK") Bytes)"
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
+      # Solange S3 nicht eingerichtet ist, der einzige öffentlich abrufbare
+      # Downloadweg fürs APK - derselbe Grund wie beim Windows/Linux-Upload
+      # weiter oben. Braucht "needs: release" (siehe Job-Kopf), damit die
+      # Release fürs aktuelle Tag schon existiert (von tauri-action im
+      # "release"-Job angelegt), bevor hier ein Asset hochgeladen wird.
+      - name: APK zur GitHub-Release hochladen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cp "${{ steps.apk.outputs.path }}" Iris.apk
+          gh release upload "${{ steps.tag.outputs.name }}" Iris.apk \
+            --repo "${{ github.repository }}" --clobber
+
       - name: Nach S3-kompatiblem Speicher hochladen
         if: env.S3_BUCKET != ''
         shell: bash
@@ -421,3 +474,36 @@ jobs:
 
           aws s3 cp manifest.json "s3://$S3_BUCKET/iris/manifest-android.json" \
             "${ENDPOINT_ARG[@]}" --content-type application/json
+
+  # --- Release veröffentlichen (nicht länger Entwurf) ---
+  # tauri-action legt die Release bewusst als Entwurf an (releaseDraft:
+  # true) - Entwürfe sind selbst bei einem öffentlichen Repo nicht
+  # öffentlich abrufbar. Solange S3 nicht eingerichtet ist (siehe oben),
+  # ist das Veröffentlichen dieser Release der einzige Weg, die oben
+  # hochgeladenen Dateien tatsächlich öffentlich abrufbar zu machen - die
+  # Landingpage (web/index.html) liest sie über die öffentliche
+  # GitHub-Releases-API, wenn kein S3 konfiguriert ist. Läuft erst, wenn
+  # alle Uploads (Windows/Linux/Android) durch sind.
+  publish-release:
+    needs: [release, release-android]
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Release-Tag bestimmen
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=iris-build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - name: Release veröffentlichen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ steps.tag.outputs.name }}" \
+            --repo "${{ github.repository }}" --draft=false
