@@ -8,7 +8,14 @@ von Hand im generierten (nicht eingecheckten) Projekt zu pflegen.
 import re
 import sys
 
-IMPORTS = "import java.io.FileInputStream\nimport java.util.Properties\n"
+# NUR FileInputStream importieren, nicht zusaetzlich java.util.Properties:
+# Run #15 zeigte "Conflicting import, imported name 'Properties' is
+# ambiguous" - Gradles Kotlin-DSL spleisst Properties offenbar bereits
+# implizit in jedes Build-Skript ein, ein zusaetzlicher expliziter Import
+# davon kollidiert damit. Die offizielle Tauri-Doku importiert deshalb auch
+# nur FileInputStream, nicht Properties - exakt danach richten, nicht
+# "vorsichtshalber" ergaenzen.
+IMPORTS = "import java.io.FileInputStream\n"
 
 SIGNING_CONFIG = """    signingConfigs {
         create("release") {
