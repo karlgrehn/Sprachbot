@@ -202,10 +202,13 @@
 
     <script>
       // Öffentliche Basis-Adresse des Objektspeichers (S3/R2/o. Ä. — siehe
-      // README "Download-Hosting"). Muss gesetzt werden, sobald der Speicher
-      // eingerichtet ist; bis dahin bleibt der Button deaktiviert.
-      // Entspricht S3_PUBLIC_BASE_URL aus .github/workflows/release.yml.
+      // README "Download-Hosting"). Sobald gesetzt, ist das die bevorzugte
+      // Downloadquelle. Bis dahin liest die Seite die Downloads direkt aus
+      // der öffentlichen GitHub-Releases-API (siehe unten) — das
+      // funktioniert nur, solange das Repo öffentlich ist; private Repos
+      // liefern keine öffentlich abrufbaren Release-Assets.
       const DOWNLOAD_BASE = "";
+      const GITHUB_REPO = "karlgrehn/Sprachbot";
 
       function formatBytes(bytes) {
         if (!bytes) return "";
@@ -254,7 +257,7 @@
         } else {
           link.href = "#";
           link.setAttribute("aria-disabled", "true");
-          sizeEl.textContent = DOWNLOAD_BASE ? "Wird vorbereitet …" : "Noch kein Download eingerichtet";
+          sizeEl.textContent = "Wird geladen …";
         }
       }
 
@@ -293,6 +296,37 @@
             })
             .catch(() => {});
         }
+      } else {
+        // Interimslösung, solange kein eigener Objektspeicher eingerichtet
+        // ist (siehe .github/workflows/release.yml, Abschnitt
+        // "publish-release"): liest die Downloads direkt aus der
+        // öffentlichen GitHub-Releases-API. Funktioniert nur, solange das
+        // Repo öffentlich ist — private Repos liefern hier keine
+        // öffentlich abrufbaren Assets, dann bleibt nur noch S3 oben.
+        fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`)
+          .then((r) => (r.ok ? r.json() : []))
+          .then((releases) => {
+            const latest = releases.find((r) => !r.draft);
+            if (!latest) return;
+            const assets = latest.assets || [];
+            const findAsset = (pattern) => assets.find((a) => pattern.test(a.name));
+
+            const winOffline = findAsset(/^Iris-Offline_.*_x64-setup\.exe$/i);
+            const linuxOffline = findAsset(/^Iris-Offline_.*\.AppImage$/i);
+            const androidApk = findAsset(/^Iris\.apk$/i);
+
+            if (winOffline) {
+              manifests.windows = { offline: { url: winOffline.browser_download_url, bytes: winOffline.size } };
+            }
+            if (linuxOffline) {
+              manifests.linux = { offline: { url: linuxOffline.browser_download_url, bytes: linuxOffline.size } };
+            }
+            if (androidApk) {
+              manifests.android = { apk: { url: androidApk.browser_download_url, bytes: androidApk.size } };
+            }
+            render();
+          })
+          .catch(() => {});
       }
     </script>
   </body>
