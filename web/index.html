@@ -27,31 +27,92 @@
         opacity: 0.75;
         margin-top: 0;
       }
-      .downloads {
+      .platform-tabs {
         display: flex;
-        gap: 0.8em;
         justify-content: center;
-        flex-wrap: wrap;
-        margin: 2em 0;
+        gap: 0.5em;
+        margin-top: 2em;
+      }
+      .platform-tabs button {
+        border: 1px solid #ccc;
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 0.5em 1.1em;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .platform-tabs button[aria-pressed="true"] {
+        border-color: #396cd8;
+        background: #396cd81a;
+      }
+      .variant-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1em;
+        margin: 1.5em 0;
+        text-align: left;
+      }
+      @media (max-width: 560px) {
+        .variant-cards {
+          grid-template-columns: 1fr;
+        }
+      }
+      .variant-card {
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        padding: 1.2em;
+        background: #ffffff;
+        display: flex;
+        flex-direction: column;
+      }
+      .variant-card h2 {
+        margin: 0 0 0.3em;
+        font-size: 1.1em;
+      }
+      .variant-card p {
+        font-size: 0.9em;
+        opacity: 0.8;
+        flex-grow: 1;
+      }
+      .variant-card .size {
+        font-weight: 600;
+        font-size: 0.85em;
+        opacity: 0.9;
+      }
+      .variant-card .warning {
+        color: #a15c00;
+        font-size: 0.85em;
       }
       a.button {
         display: inline-block;
+        margin-top: 0.8em;
         border-radius: 8px;
-        padding: 0.7em 1.4em;
+        padding: 0.6em 1.2em;
         font-weight: 600;
         text-decoration: none;
-        color: #0f0f0f;
-        background-color: #ffffff;
-        border: 1px solid #ccc;
-        box-shadow: 0 2px 2px rgba(0, 0, 0, 0.15);
+        color: #ffffff;
+        background-color: #396cd8;
+        text-align: center;
       }
       a.button:hover {
-        border-color: #396cd8;
+        background-color: #2d59b3;
+      }
+      a.button[aria-disabled="true"] {
+        background-color: #999;
+        cursor: not-allowed;
+      }
+      .pwa-hint {
+        margin-top: 2.5em;
+        padding: 1em;
+        border-radius: 8px;
+        background: #ffffff;
+        border: 1px solid #ccc;
+        font-size: 0.9em;
       }
       .hinweis {
-        font-size: 0.9em;
+        font-size: 0.85em;
         opacity: 0.6;
-        margin-top: 3em;
+        margin-top: 2em;
       }
       code {
         background: rgba(0, 0, 0, 0.06);
@@ -63,10 +124,16 @@
           color: #f6f6f6;
           background-color: #2f2f2f;
         }
-        a.button {
+        .platform-tabs button,
+        .variant-card,
+        .pwa-hint {
           color: #ffffff;
           background-color: #0f0f0f98;
           border-color: #444;
+        }
+        .platform-tabs button[aria-pressed="true"] {
+          border-color: #6a94e6;
+          background: #396cd84d;
         }
         code {
           background: rgba(255, 255, 255, 0.12);
@@ -81,27 +148,117 @@
         Ein persönlicher Agent. Ein einziges Textfeld steuert alles.
       </p>
 
-      <div class="downloads">
-        <a class="button" href="https://github.com/karlgrehn/Sprachbot/releases/latest">
-          Für Windows herunterladen
-        </a>
-        <a class="button" href="https://github.com/karlgrehn/Sprachbot/releases/latest">
-          Für Linux herunterladen
-        </a>
+      <div class="platform-tabs" role="tablist" aria-label="Plattform">
+        <button type="button" data-platform="windows" aria-pressed="true">Windows</button>
+        <button type="button" data-platform="linux" aria-pressed="false">Linux</button>
       </div>
 
-      <p>
-        Läuft lokal auf deinem Rechner, ohne Internet, sobald
-        <a href="https://ollama.com/">Ollama</a> installiert ist.
-        Quellcode und Ausbaustufen:
-        <a href="https://github.com/karlgrehn/Sprachbot">github.com/karlgrehn/Sprachbot</a>.
-      </p>
+      <div class="variant-cards">
+        <div class="variant-card">
+          <h2>Normal</h2>
+          <p>
+            Nur die App. Setzt voraus, dass <a href="https://ollama.com/">Ollama</a>
+            bereits installiert ist (oder danach installiert wird) und ein
+            Modell einmal heruntergeladen wird.
+          </p>
+          <p class="size" data-size-for="normal"></p>
+          <a class="button" data-download="normal" href="#">Herunterladen</a>
+        </div>
+        <div class="variant-card">
+          <h2>Offline</h2>
+          <p>
+            Enthält Ollama und ein Modell bereits fertig eingerichtet —
+            läuft nach der Installation ohne jede weitere
+            Internetverbindung.
+          </p>
+          <p class="warning">Braucht deutlich mehr Speicherplatz.</p>
+          <p class="size" data-size-for="offline"></p>
+          <a class="button" data-download="offline" href="#">Herunterladen</a>
+        </div>
+      </div>
+
+      <div class="pwa-hint">
+        <strong>Android, iPhone oder ein weiterer Rechner?</strong>
+        Kein Download nötig — Iris läuft dort als Web-App, verbunden mit
+        dem Rechner, auf dem die Installation oben läuft. Einrichtung
+        (Tailscale) steht im Handbuch, das der Installation beiliegt.
+      </div>
 
       <p class="hinweis">
-        Beide Buttons führen zur GitHub-Release-Seite — dort liegen die
-        passenden Installer (<code>.exe</code>/<code>.msi</code> für
-        Windows, <code>.AppImage</code> für Linux) als Anhang.
+        Läuft nach der Einrichtung lokal, ohne dass Nachrichten oder Daten
+        einen fremden Server erreichen.
       </p>
     </main>
+
+    <script>
+      // Öffentliche Basis-Adresse des Objektspeichers (S3/R2/o. Ä. — siehe
+      // README "Download-Hosting"). Muss gesetzt werden, sobald der Speicher
+      // eingerichtet ist; bis dahin bleiben die Buttons deaktiviert.
+      // Entspricht S3_PUBLIC_BASE_URL aus .github/workflows/release.yml.
+      const DOWNLOAD_BASE = "";
+
+      function formatBytes(bytes) {
+        if (!bytes) return "";
+        const gb = bytes / 1024 ** 3;
+        if (gb >= 1) return `${gb.toFixed(1)} GB`;
+        return `${Math.round(bytes / 1024 ** 2)} MB`;
+      }
+
+      let platform = "windows";
+      let manifests = {}; // { windows: {normal:{url,bytes}, offline:{...}}, linux: {...} }
+
+      function render() {
+        const data = manifests[platform];
+        for (const variant of ["normal", "offline"]) {
+          const link = document.querySelector(`[data-download="${variant}"]`);
+          const sizeEl = document.querySelector(`[data-size-for="${variant}"]`);
+          const entry = data?.[variant];
+          if (entry) {
+            link.href = entry.url;
+            link.removeAttribute("aria-disabled");
+            sizeEl.textContent = `Größe: ${formatBytes(entry.bytes)}`;
+          } else {
+            link.href = "#";
+            link.setAttribute("aria-disabled", "true");
+            sizeEl.textContent = DOWNLOAD_BASE ? "Wird vorbereitet …" : "Noch kein Download eingerichtet";
+          }
+        }
+      }
+
+      document.querySelectorAll("a[data-download]").forEach((link) => {
+        link.addEventListener("click", (e) => {
+          if (link.getAttribute("aria-disabled") === "true") e.preventDefault();
+        });
+      });
+
+      document.querySelectorAll(".platform-tabs button").forEach((button) => {
+        button.addEventListener("click", () => {
+          platform = button.dataset.platform;
+          document
+            .querySelectorAll(".platform-tabs button")
+            .forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+          render();
+        });
+      });
+
+      render();
+
+      // Manifeste laden, die der Release-Workflow bei jedem Build ablegt
+      // (iris/manifest-windows.json, iris/manifest-linux.json) — keine
+      // fest verdrahteten Dateinamen/Versionsnummern hier im Frontend.
+      if (DOWNLOAD_BASE) {
+        for (const key of ["windows", "linux"]) {
+          fetch(`${DOWNLOAD_BASE}/iris/manifest-${key}.json`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (data) {
+                manifests[key] = data;
+                render();
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    </script>
   </body>
 </html>

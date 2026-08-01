@@ -7,14 +7,20 @@ mod mcp;
 mod message;
 mod oauth;
 mod ollama;
+#[cfg(feature = "offline-bundle")]
+mod ollama_sidecar;
 mod permissions;
 mod postfach;
 mod registry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+
+    #[cfg(feature = "offline-bundle")]
+    let builder = builder.plugin(tauri_plugin_shell::init());
+
+    builder
         .setup(|app| {
             // Gebündelt (Release-Build): "dist" liegt im Resource-Verzeichnis
             // (siehe tauri.conf.json "bundle.resources"). Im Entwicklungsbetrieb
@@ -25,6 +31,10 @@ pub fn run() {
                 .path()
                 .resolve("dist", tauri::path::BaseDirectory::Resource)
                 .unwrap_or_else(|_| std::path::PathBuf::from("../dist"));
+
+            #[cfg(feature = "offline-bundle")]
+            ollama_sidecar::spawn(app.handle());
+
             tauri::async_runtime::spawn(api::serve(dist_dir));
             Ok(())
         })

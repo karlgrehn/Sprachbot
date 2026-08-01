@@ -131,37 +131,88 @@ echten Mobilgeräten.** Vorgezogen aus M6, auf Wunsch.
 
 ## Download / Release-Build
 
-Es gibt noch keinen veröffentlichten Download. Kein Sandbox-Build kann eine
-echte Windows-`.exe` erzeugen (dafür fehlt der Windows-Toolchain) oder auch
-nur den Linux-Build durchlaufen lassen (fehlendes WebKitGTK, siehe unten) —
-`.github/workflows/release.yml` löst das, indem es auf echten
-GitHub-Runnern (Windows + Linux) baut, mit den dort tatsächlich
-installierten Systemvoraussetzungen.
+`.github/workflows/release.yml` baut auf echten GitHub-Runnern (Windows +
+Linux) — kein Sandbox-Build kann eine echte Windows-`.exe` erzeugen (kein
+Windows-Toolchain) oder auch nur den Linux-Build durchlaufen lassen
+(fehlendes WebKitGTK, siehe unten).
 
 Auslösen:
 - **Manuell**: Im GitHub-Repo unter „Actions" → „Release" → „Run workflow".
 - **Per Tag**: `git tag v0.1.0 && git push origin v0.1.0`.
 
-Das Ergebnis landet als **Entwurf** (`releaseDraft: true`) unter „Releases"
-im Repo — mit einer echten `.exe`/`.msi` (Windows) und einem `.AppImage`
-(Linux) als Anhang. Ein Entwurf ist bewusst nicht sofort öffentlich; ihn zu
-veröffentlichen ist eine eigene, manuelle Entscheidung.
+### Zwei Varianten pro Plattform
 
-**Vercel eignet sich nicht, um die App selbst zu hosten** — Vercel baut und
-hostet Web-Apps/statische Seiten, keine nativen Desktop-Programme.
-`web/index.html` ist eine schlichte, fertige Download-Landingpage
-(reines HTML/CSS, kein Build-Schritt) mit Links auf die GitHub-
-Release-Seite. Um sie auf Vercel zu deployen:
+| | Normal | Offline |
+|---|---|---|
+| Enthält | nur die App | App + Ollama + Modell (`gemma3:1b`) als Sidecar |
+| Voraussetzung | Ollama separat installiert, Modell einmal gezogen | keine — läuft nach der Installation ohne Internet |
+| Größe | wenige MB | mehrere GB |
+
+Die Landingpage (`web/index.html`) fragt beim Herunterladen immer, welche
+Variante gewünscht ist, und weist bei „Offline" auf den höheren
+Speicherbedarf hin.
+
+### Repo bleibt privat — Downloads laufen über eigenen Objektspeicher
+
+Auf Wunsch bleibt der Quellcode privat (`docs/PLAN.md`: „Closed Source.
+Ausgeliefert werden Binaries, kein Quellcode.") — GitHub Releases sind bei
+privaten Repos nicht öffentlich abrufbar, deshalb lädt der Workflow beide
+Varianten stattdessen zu einem **S3-kompatiblen Objektspeicher** hoch
+(AWS S3, Cloudflare R2, Backblaze B2, o. Ä. — deine Wahl, dein Konto; das
+kann diese Sitzung nicht für dich einrichten). Nötige Repo-Secrets:
+
+| Secret | Bedeutung |
+|---|---|
+| `S3_BUCKET` | Bucket-Name |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Zugangsdaten |
+| `S3_ENDPOINT` | Leer lassen für echtes AWS S3; sonst die Endpunkt-URL (z. B. R2) |
+| `S3_PUBLIC_BASE_URL` | Öffentliche Basis-Adresse, unter der Dateien abrufbar sind |
+
+Ohne diese Secrets läuft der Build durch, der Upload-Schritt wird nur
+übersprungen. **Wichtig:** die Bucket-Berechtigung für öffentliches Lesen
+muss auf Bucket-Ebene eingerichtet werden (Bucket-Policy / „Public Bucket"-
+Schalter je nach Anbieter) — das Skript setzt keine Objekt-ACLs, weil R2
+(anders als AWS S3) diese gar nicht unterstützt.
+
+Nach jedem Build liegen unter `<S3_PUBLIC_BASE_URL>/iris/manifest-windows.json`
+und `.../manifest-linux.json` die aktuellen Download-Adressen + Dateigrößen
+für beide Varianten — die Landingpage liest genau das, keine fest
+verdrahteten Dateinamen.
+
+**Um das Repo tatsächlich auf privat zu stellen:** GitHub → Settings →
+General → Danger Zone → „Change visibility". Das kann keines meiner
+Werkzeuge für dich übernehmen.
+
+### Vercel: nur die Landingpage, nicht die App selbst
+
+Vercel baut und hostet Web-Apps/statische Seiten, keine nativen
+Desktop-Programme. `web/index.html` ist eine schlichte, fertige
+Download-Landingpage (reines HTML/CSS, kein Build-Schritt, **kein Link auf
+das Quellcode-Repository**) mit der Normal/Offline-Auswahl. Um sie auf
+Vercel zu deployen:
 
 1. Vercel-Connector unter den claude.ai-Verbindungseinstellungen
    autorisieren (das kann diese Sitzung nicht selbst tun).
 2. Repo in Vercel importieren, **Root Directory** auf `web` setzen,
-   kein Build-Command nötig.
+   kein Build-Command nötig — oder die Datei direkt hochladen, wenn das
+   Repo privat ist und nicht mit Vercel verknüpft werden soll.
+3. In `web/index.html` die Konstante `DOWNLOAD_BASE` auf
+   `S3_PUBLIC_BASE_URL` setzen, sobald der Objektspeicher eingerichtet ist
+   — vorher bleiben die Download-Buttons bewusst deaktiviert
+   („Noch kein Download eingerichtet").
 
-**Wichtig:** Der Release-Workflow legt Releases als **Entwurf** an.
-Die Download-Links auf der Landingpage funktionieren erst, sobald ein
-Release veröffentlicht (nicht mehr Entwurf) ist — das ist bewusst eine
-eigene, manuelle Freigabe.
+### Offener Punkt bei der Offline-Variante
+
+Ollama sucht seine nativen Laufzeitbibliotheken relativ zur eigenen
+Programmdatei (`<exe_dir>/lib/ollama` unter Windows,
+`<exe_dir>/../lib/ollama` unter Linux — keine verlässliche
+Umgebungsvariable dafür, siehe [ollama/ollama#13535](https://github.com/ollama/ollama/issues/13535)).
+Der Workflow bündelt dieses `lib`-Verzeichnis als Tauri-Ressource, aber ob
+es nach dem Bündeln tatsächlich an der richtigen Stelle relativ zum
+Sidecar landet, ist **nicht auf einem echten Gerät bestätigt** — dafür
+gibt es im Workflow einen Diagnose-Schritt („Gestagte Verzeichnisstruktur
+prüfen"), dessen Ausgabe nach dem ersten Lauf zeigt, ob eine Korrektur
+nötig ist.
 
 ## Voraussetzungen
 
@@ -258,6 +309,14 @@ funktioniert. Getestet wurde die Web-Seite selbst (Manifest, Service
 Worker, gleiche Oberfläche vom Kern ausgeliefert) mit echtem
 Playwright/Chromium — das Verhalten von Safaris „Zum Home-Bildschirm" oder
 Chromes Install-Prompt auf echter Hardware kann nur ein echtes Gerät zeigen.
+
+**Bewusst nicht gebaut: Handys als Fat Client.** Ein Handy mit genug Power
+könnte technisch selbst rechnen (siehe `docs/PLAN.md`, Abschnitt 3:
+Geräteerkennung über Tokens/Sekunde, nicht über Gerätetyp) — das würde aber
+eine echte native Android/iOS-App bedeuten (Tauri Mobile), für iOS zwingend
+einen Mac mit Xcode und Apple-Entwickler-Konto, und eine ungeklärte Frage,
+wie Ollama überhaupt in einer mobilen App-Sandbox laufen soll. Auf
+ausdrücklichen Wunsch zurückgestellt — Handys bleiben vorerst Thin Clients.
 
 ## Architektur (Kurzfassung)
 
