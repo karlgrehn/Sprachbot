@@ -8,12 +8,14 @@ von Hand im generierten (nicht eingecheckten) Projekt zu pflegen.
 import re
 import sys
 
+IMPORTS = "import java.io.FileInputStream\nimport java.util.Properties\n"
+
 SIGNING_CONFIG = """    signingConfigs {
         create("release") {
             val keystorePropertiesFile = rootProject.file("keystore.properties")
-            val keystoreProperties = java.util.Properties()
+            val keystoreProperties = Properties()
             if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
+                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
             }
 
             keyAlias = keystoreProperties["keyAlias"] as String
@@ -34,6 +36,19 @@ def main():
     path = sys.argv[1]
     with open(path, "r", encoding="utf-8") as f:
         content = f.read()
+
+    # Import an den Dateianfang statt java.util.Properties()/java.io.Xxx()
+    # inline zu qualifizieren: Run #14 zeigte den echten Grund dafür ("error:
+    # Unresolved reference: util"/"io") - innerhalb des generierten
+    # android{}-Scopes ist der Bezeichner "java" selbst mehrdeutig (vermutlich
+    # durch eine Gradle/AGP-DSL-Erweiterung überschattet), sodass
+    # "java.util.Properties()" dort nicht auf das Top-Level-Package
+    # aufgelöst wird. Import + unqualifizierter Klassenname (exakt wie in
+    # der offiziellen Tauri-Doku) umgeht das.
+    if "import java.io.FileInputStream" in content:
+        print(f"{path}: Imports bereits vorhanden, überspringe.")
+    else:
+        content = IMPORTS + content
 
     if "signingConfigs" in content:
         print(f"{path}: signingConfigs bereits vorhanden, überspringe Einfügen.")
