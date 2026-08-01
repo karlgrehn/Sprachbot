@@ -1,6 +1,8 @@
 mod api;
 mod hardware;
+mod mcp;
 mod message;
+mod oauth;
 mod ollama;
 mod permissions;
 mod postfach;

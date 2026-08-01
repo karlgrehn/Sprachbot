@@ -26,18 +26,28 @@ interface PermissionDef {
 
 interface GrantedPermission {
   id: string;
+  scope: string | null;
   granted_at_unix: number;
 }
 
 interface PermissionRequest {
   id: string;
   anzeigetext: string;
+  scope: string | null;
 }
 
 interface AskResponse {
   response: string;
   command_handled: boolean;
   permission_request: PermissionRequest | null;
+}
+
+interface GrantResponse {
+  id: string;
+  scope: string | null;
+  granted_at_unix: number;
+  tools: string[] | null;
+  connect_error: string | null;
 }
 
 let statusEl: HTMLElement | null;
@@ -67,12 +77,23 @@ function showPermissionButton(request: PermissionRequest) {
     const resp = await fetch(`${API_BASE}/api/permissions/grant`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: request.id }),
+      body: JSON.stringify({ id: request.id, scope: request.scope }),
     });
-    if (resp.ok) {
-      setOutput(`✓ Erteilt: ${request.anzeigetext}.`);
-    } else {
+    if (!resp.ok) {
       setOutput(`Fehler beim Erteilen: ${await resp.text()}`);
+      return;
+    }
+    const granted: GrantResponse = await resp.json();
+    if (granted.tools) {
+      setOutput(
+        `✓ Erteilt: ${request.anzeigetext}. Verbunden. Werkzeuge: ${
+          granted.tools.length > 0 ? granted.tools.join(", ") : "keine"
+        }.`,
+      );
+    } else if (granted.connect_error) {
+      setOutput(`✓ Erteilt: ${request.anzeigetext}. Verbindung fehlgeschlagen: ${granted.connect_error}`);
+    } else {
+      setOutput(`✓ Erteilt: ${request.anzeigetext}.`);
     }
   });
   outputActionsEl.appendChild(button);
@@ -152,16 +173,23 @@ async function init() {
   );
 }
 
+interface McpServerInfo {
+  url: string;
+  tools: { name: string }[];
+}
+
 // Erzeugt aus der Registry, nicht aus dem Modellgedächtnis — sonst
 // erfindet Iris Funktionen, die es nicht gibt (docs/PLAN.md, Abschnitt 2).
 async function showHelp() {
-  const [registryResp, permissionsResp] = await Promise.all([
+  const [registryResp, permissionsResp, mcpResp] = await Promise.all([
     fetch(`${API_BASE}/api/registry`),
     fetch(`${API_BASE}/api/permissions`),
+    fetch(`${API_BASE}/api/mcp/servers`),
   ]);
   const { actions }: { actions: RegistryAction[] } = await registryResp.json();
   const { definitions, active }: { definitions: PermissionDef[]; active: GrantedPermission[] } =
     await permissionsResp.json();
+  const { servers }: { servers: McpServerInfo[] } = await mcpResp.json();
   const activeIds = new Set(active.map((a) => a.id));
 
   const lines = [
@@ -176,7 +204,12 @@ async function showHelp() {
       (p) => `- [${activeIds.has(p.id) ? "erteilt" : "nicht erteilt"}] ${p.anzeigetext}`,
     ),
     "",
-    "Sag Iris einfach, was du willst — z. B. \"antworte ab jetzt kurz\", \"mach das rückgängig\" oder \"verbinde mein WhatsApp\".",
+    "Verbundene MCP-Server:",
+    ...(servers.length > 0
+      ? servers.map((s) => `- ${s.url}: ${s.tools.map((t) => t.name).join(", ") || "keine Werkzeuge"}`)
+      : ["- keine"]),
+    "",
+    "Sag Iris einfach, was du willst — z. B. \"antworte ab jetzt kurz\", \"mach das rückgängig\", \"verbinde mein WhatsApp\" oder \"verbinde mich mit https://beispiel.de/mcp\".",
   ];
   setOutput(lines.join("\n"));
 }

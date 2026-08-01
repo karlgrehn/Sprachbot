@@ -33,7 +33,24 @@ Ausführung. Die erste ist `bridge.whatsapp.koppeln`: fragt der Nutzer nach
 WhatsApp, ohne dass die Berechtigung erteilt ist, antwortet Iris mit dem
 festen Anzeigetext aus der Registry und das Frontend zeigt einen echten
 „Erlauben"-Button. Erst der Klick erteilt die Berechtigung — das Modell kann
-sie nicht selbst setzen, nur anfordern.
+sie nicht selbst setzen, nur anfordern. Die zweite ist `mcp.server.verbinden`:
+der Anzeigetext ist immer derselbe, nur der `scope` (die Server-URL) ist frei
+— genau das `geltung: { chat_id }`-Schema aus dem Plan, nur mit einer URL
+statt einer Chat-ID.
+
+## MCP-Client (M3)
+
+`src-tauri/src/mcp.rs` spricht MCP über den "Streamable HTTP"-Transport:
+Initialize-Handshake, `tools/list`, `tools/call`, Session-Header. Einen
+Server zu verbinden ist die rote Aktion oben — sagt der Nutzer „verbinde
+mich mit https://…", fragt Iris die Berechtigung an; ist sie erteilt, folgt
+die Verbindung sofort und die gefundenen Werkzeuge landen in der Antwort.
+
+Verlangt der Server eine Autorisierung (401 mit `WWW-Authenticate`), läuft
+`src-tauri/src/oauth.rs` den vollen OAuth-2.0-Authorization-Code-Fluss mit
+PKCE: Entdeckung der Endpunkte (RFC 9728 + RFC 8414), Systembrowser öffnen,
+Code über einen kurzlebigen lokalen Redirect-Listener auf Port 47616
+abfangen, gegen ein Token tauschen.
 
 ## Status
 
@@ -62,6 +79,24 @@ sie nicht selbst setzen, nur anfordern.
       Sandbox ohne echtes Telefon und WhatsApp-Konto fertigstellen, weil das
       Koppeln einen echten QR-Scan mit einem echten Account braucht. Siehe
       „Nächster Schritt: echte Bridge anbinden" unten.
+
+**M3 — MCP-Client: fertig, gegen einen selbstgebauten Referenzserver
+end-to-end verifiziert.**
+
+- [x] Initialize-Handshake, `tools/list`, `tools/call`, Session-Header
+      (`mcp.rs`) über den Streamable-HTTP-Transport
+- [x] Server hinzufügen ist eine rote Aktion (`mcp.server.verbinden`), scope
+      = Server-URL; Erteilen verbindet sofort und zeigt die Werkzeuge
+- [x] Voller OAuth-2.0-Authorization-Code-Fluss mit PKCE (`oauth.rs`):
+      RFC-9728/8414-Entdeckung, Browser öffnen, lokaler Redirect-Listener,
+      Token-Tausch — inklusive Negativtest (falscher PKCE-Verifier wird vom
+      Server abgelehnt)
+- [ ] **Gegen einen echten dritten MCP-Server verifiziert.** Getestet wurde
+      gegen einen selbstgebauten Referenzserver (siehe unten) — das erfüllt
+      "ein *fremder* MCP-Server" nur im Sinne von "der Client kennt seine
+      Implementierung nicht", nicht im Sinne von "ein echter Betreiber hat
+      das genutzt". Ein echter dritter Server (mit oder ohne OAuth) ist der
+      nächste sinnvolle Test.
 
 M1 gilt erst als fertig, wenn das auf einem echten Rechner mit installiertem
 Ollama getestet wurde — das kann in dieser Sandbox nicht verifiziert werden
@@ -114,6 +149,18 @@ curl -X POST http://127.0.0.1:47615/api/nachrichten \
         {"chat":"Familie","von":"Mama","text":"Kommst du heute?","herkunft":"fremd","zeit_unix":1}
       ]}'
 curl http://127.0.0.1:47615/api/postfach
+
+# MCP-Server verbinden (rote Aktion), dann Werkzeug aufrufen
+curl -X POST http://127.0.0.1:47615/api/ask \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gemma3:4b","prompt":"verbinde mich mit https://beispiel.de/mcp"}'
+curl -X POST http://127.0.0.1:47615/api/permissions/grant \
+  -H "Content-Type: application/json" \
+  -d '{"id":"mcp.server.verbinden","scope":"https://beispiel.de/mcp"}'
+curl http://127.0.0.1:47615/api/mcp/servers
+curl -X POST http://127.0.0.1:47615/api/mcp/tools/call \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://beispiel.de/mcp","tool":"irgendein_werkzeug","arguments":{}}'
 ```
 
 ## Architektur (Kurzfassung)
@@ -140,7 +187,7 @@ Bridge speisen wird.
 | Nachrichten | `message.rs` + `postfach.rs`, Herkunft bleibt immer markiert |
 | Modell lokal | Ollama, Gemma-Klasse, RAM-abhängig gewählt |
 | Messaging (Bridge fehlt noch) | Conduit (Matrix) + mautrix-Bridges als Sidecars |
-| Werkzeuge (ab M3) | MCP-Client gegen Remote-MCP-Server |
+| Werkzeuge | MCP-Client (`mcp.rs`) + OAuth/PKCE (`oauth.rs`) gegen Remote-MCP-Server |
 
 ## Nächster Schritt: echte Bridge anbinden
 
@@ -178,6 +225,21 @@ Herkunfts-Markierung im Zusammenfassungs-Prompt, sauberer 502 bei fehlendem
 Ollama ohne Teilzustand im Postfach). Ein vollständiger `cargo tauri
 build`/`dev` mit echtem Fenster wurde dort nicht verifiziert, und Conduit /
 mautrix-whatsapp wurden nicht real gestartet — Letzteres braucht ohnehin ein
-echtes Telefon zum Koppeln, das in keiner Sandbox existiert. Auf einer
-normalen Linux-Arbeitsstation mit installierten Tauri-Voraussetzungen sollte
-`npm run tauri dev` ohne Weiteres funktionieren.
+echtes Telefon zum Koppeln, das in keiner Sandbox existiert.
+
+Für M3 galt dieselbe Grenze in die andere Richtung: es gibt keinen Zugang zu
+einem echten dritten MCP-Server mit echten OAuth-Zugangsdaten. Verifiziert
+wurde deshalb gegen zwei selbstgebaute, minimale Referenzserver (Node,
+`http`-Modul, keine Abhängigkeiten) — einer offen, einer mit erzwungener
+Autorisierung. Real getestet, alles über echtes HTTP, echte JSON-RPC-
+Nachrichten, echte PKCE-Kryptografie: Initialize/Notifications/Liste/Aufruf
+gegen den offenen Server; 401-Erkennung, RFC-9728/8414-Entdeckung, ein
+echter lokaler Redirect-Listener, der einen echten HTTP-Redirect abfängt,
+Token-Tausch, und ein Negativtest mit falschem PKCE-Verifier, den der
+Referenzserver korrekt ablehnt. Dabei kam ein echter Bug ans Licht (ein
+Rust-Borrow-Checker-Fehler durch einen partiellen Move in `mcp.rs`), der vor
+diesem Test unbemerkt geblieben wäre. Was so ein Test nicht ersetzen kann:
+einen echten Systembrowser, der einen echten Nutzer zur Zustimmung zeigt,
+und einen echten Betreiber, der Iris als "fremden" Client akzeptiert. Auf
+einer normalen Linux-Arbeitsstation mit installierten Tauri-Voraussetzungen
+sollte `npm run tauri dev` ohne Weiteres funktionieren.

@@ -3,8 +3,11 @@
 //! *braucht*, bevor sie etwas Nicht-triviales tun darf. IDs und Anzeigetexte
 //! sind fest im Code definiert — das Modell kann nur eine vorhandene ID
 //! anfordern, nie einen eigenen Text oder eine neue Berechtigung erfinden.
+//! Der `scope` ist die einzige freie Angabe (z. B. eine Server-URL bei MCP)
+//! und verändert nie den Anzeigetext, nur worauf sich die Berechtigung
+//! bezieht — das entspricht dem `geltung: { chat_id }`-Schema aus dem Plan.
 //!
-//! Erteilt werden Berechtigungen ausschließlich in der App (M1/M2 kennen
+//! Erteilt werden Berechtigungen ausschließlich in der App (M1–M3 kennen
 //! ohnehin noch keinen anderen Kanal). Der Chat-mit-sich-selbst-Kanal aus
 //! dem Plan kommt erst mit M4 hinzu.
 
@@ -18,18 +21,25 @@ pub struct PermissionDef {
     pub anzeigetext: &'static str,
 }
 
-pub const PERMISSIONS: &[PermissionDef] = &[PermissionDef {
-    id: "bridge.whatsapp.koppeln",
-    anzeigetext: "Iris darf mein WhatsApp-Konto koppeln, um Nachrichten zu lesen",
-}];
+pub const PERMISSIONS: &[PermissionDef] = &[
+    PermissionDef {
+        id: "bridge.whatsapp.koppeln",
+        anzeigetext: "Iris darf mein WhatsApp-Konto koppeln, um Nachrichten zu lesen",
+    },
+    PermissionDef {
+        id: "mcp.server.verbinden",
+        anzeigetext: "Iris darf sich mit diesem MCP-Server verbinden und dessen Werkzeuge benutzen",
+    },
+];
 
-fn def_for(id: &str) -> Option<&'static PermissionDef> {
+pub fn def_for(id: &str) -> Option<&'static PermissionDef> {
     PERMISSIONS.iter().find(|p| p.id == id)
 }
 
 #[derive(Serialize, Clone)]
 pub struct GrantedPermission {
     pub id: String,
+    pub scope: Option<String>,
     pub granted_at_unix: u64,
 }
 
@@ -44,43 +54,62 @@ pub fn new_state() -> SharedPermissions {
     Arc::new(Mutex::new(PermissionState::default()))
 }
 
-pub fn grant(state: &SharedPermissions, id: &str) -> Result<GrantedPermission, String> {
+pub fn grant(
+    state: &SharedPermissions,
+    id: &str,
+    scope: Option<String>,
+) -> Result<GrantedPermission, String> {
     let def = def_for(id).ok_or_else(|| format!("Unbekannte Berechtigungs-ID: {id}"))?;
     let granted = GrantedPermission {
         id: def.id.to_string(),
+        scope,
         granted_at_unix: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs(),
     };
     let mut s = state.lock().unwrap();
-    s.granted.retain(|g| g.id != granted.id);
+    s.granted
+        .retain(|g| !(g.id == granted.id && g.scope == granted.scope));
     s.granted.push(granted.clone());
     Ok(granted)
 }
 
-pub fn revoke(state: &SharedPermissions, id: &str) -> bool {
+pub fn revoke(state: &SharedPermissions, id: &str, scope: Option<&str>) -> bool {
     let mut s = state.lock().unwrap();
     let before = s.granted.len();
-    s.granted.retain(|g| g.id != id);
+    s.granted
+        .retain(|g| !(g.id == id && g.scope.as_deref() == scope));
     s.granted.len() != before
 }
 
-pub fn is_granted(state: &SharedPermissions, id: &str) -> bool {
-    state.lock().unwrap().granted.iter().any(|g| g.id == id)
+pub fn is_granted(state: &SharedPermissions, id: &str, scope: Option<&str>) -> bool {
+    state
+        .lock()
+        .unwrap()
+        .granted
+        .iter()
+        .any(|g| g.id == id && g.scope.as_deref() == scope)
 }
 
 pub fn list_active(state: &SharedPermissions) -> Vec<GrantedPermission> {
     state.lock().unwrap().granted.clone()
 }
 
-pub struct CommandResult {
-    pub message: String,
-    pub permission_request: Option<PermissionDef>,
+pub struct PermissionRequest {
+    pub id: &'static str,
+    pub anzeigetext: &'static str,
+    pub scope: Option<String>,
 }
 
-/// Erkennt Absichten, die eine Berechtigung brauchen, im freien Prompt-Text.
-/// `None`, wenn der Text keine solche Absicht anfordert.
+pub struct CommandResult {
+    pub message: String,
+    pub permission_request: Option<PermissionRequest>,
+}
+
+/// Erkennt eine WhatsApp-Kopplungsabsicht im freien Prompt-Text. `None`,
+/// wenn der Text keine solche Absicht anfordert. Die MCP-Erkennung lebt in
+/// mcp.rs, weil sie zusätzlich eine URL aus dem Text lesen muss.
 pub fn handle_command(state: &SharedPermissions, prompt: &str) -> Option<CommandResult> {
     const WHATSAPP_ID: &str = "bridge.whatsapp.koppeln";
     let lower = prompt.to_lowercase();
@@ -90,7 +119,7 @@ pub fn handle_command(state: &SharedPermissions, prompt: &str) -> Option<Command
 
     let wants_revoke = lower.contains("widerruf") || lower.contains("trenn");
     if wants_revoke {
-        let revoked = revoke(state, WHATSAPP_ID);
+        let revoked = revoke(state, WHATSAPP_ID, None);
         return Some(CommandResult {
             message: if revoked {
                 "WhatsApp-Berechtigung widerrufen.".to_string()
@@ -107,7 +136,7 @@ pub fn handle_command(state: &SharedPermissions, prompt: &str) -> Option<Command
         return None;
     }
 
-    if is_granted(state, WHATSAPP_ID) {
+    if is_granted(state, WHATSAPP_ID, None) {
         return Some(CommandResult {
             message: "WhatsApp-Kopplung ist bereits erlaubt. Die Bridge selbst ist in dieser \
                       Version noch nicht angebunden (siehe docs/PLAN.md, M2)."
@@ -119,6 +148,10 @@ pub fn handle_command(state: &SharedPermissions, prompt: &str) -> Option<Command
     let def = def_for(WHATSAPP_ID).expect("bridge.whatsapp.koppeln muss in PERMISSIONS stehen");
     Some(CommandResult {
         message: format!("[BERECHTIGUNG ANGEFRAGT]\n{}", def.anzeigetext),
-        permission_request: Some(*def),
+        permission_request: Some(PermissionRequest {
+            id: def.id,
+            anzeigetext: def.anzeigetext,
+            scope: None,
+        }),
     })
 }
