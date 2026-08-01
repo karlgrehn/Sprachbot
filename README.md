@@ -217,18 +217,26 @@ aus `capabilities/offline.json` deshalb gar nicht. Behoben, indem
 nur die tatsächliche Sidecar-Ausführung (`ollama_sidecar::spawn`) bleibt
 hinter dem Feature.
 
-### Offener Punkt bei der Offline-Variante
+### Gelöst: `lib/ollama`-Platzierung bestätigt, Offline-Build durchgehend grün
 
 Ollama sucht seine nativen Laufzeitbibliotheken relativ zur eigenen
 Programmdatei (`<exe_dir>/lib/ollama` unter Windows,
 `<exe_dir>/../lib/ollama` unter Linux — keine verlässliche
 Umgebungsvariable dafür, siehe [ollama/ollama#13535](https://github.com/ollama/ollama/issues/13535)).
-Der Workflow bündelt dieses `lib`-Verzeichnis als Tauri-Ressource, aber ob
-es nach dem Bündeln tatsächlich an der richtigen Stelle relativ zum
-Sidecar landet, ist **nicht auf einem echten Gerät bestätigt** — dafür
-gibt es im Workflow einen Diagnose-Schritt („Gestagte Verzeichnisstruktur
-prüfen"), dessen Ausgabe nach dem ersten Lauf zeigt, ob eine Korrektur
-nötig ist.
+Der Diagnose-Schritt („Gestagte Verzeichnisstruktur prüfen") hat das jetzt
+mit echten Daten bestätigt: `lib/ollama` liegt direkt neben `iris-app.exe`
+und `ollama.exe` in `target/release/` — genau die richtige Stelle.
+
+Auf dem Weg dahin gab es mehrere echte, nacheinander behobene
+CI-Fehler (jeweils per echtem Log bestätigt, nicht geraten):
+Ollamas Linux-Release-Asset heißt inzwischen `.tar.zst` statt `.tgz`;
+Git-Bashs `tar` konnte die Windows-`.zip` nicht lesen (jetzt 7-Zip);
+Ollamas Release bündelt CUDA/Vulkan-Laufzeitbibliotheken mit, die allein
+~1,9 GB ausmachten und NSIS' 32-Bit-Adressraum sprengten (jetzt entfernt);
+Tauris AppImage-Bundler verwirft `linuxdeploy`s stderr ohne `--verbose`
+(jetzt gesetzt). Alle vier Fixes sind in `.github/workflows/release.yml`
+dokumentiert. Seit Run #10 bauen beide Plattformen, beide Varianten
+(normal + offline) durchgehend erfolgreich.
 
 ## Voraussetzungen
 
