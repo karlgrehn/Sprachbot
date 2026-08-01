@@ -36,7 +36,12 @@ tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json"] }
+# rustls statt des Default-Backends (native-tls/OpenSSL): der Android-Build
+# (aarch64-linux-android) scheiterte damit real an "Could not find directory
+# of OpenSSL installation" - OpenSSL cross-kompiliert nicht ohne eigenen
+# Android-Sysroot. rustls ist reines Rust, kompiliert ohne C-Abhängigkeit
+# für jedes Zielsystem (Windows/Linux/Android gleichermaßen).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sysinfo = "0.32"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors", "fs"] }
