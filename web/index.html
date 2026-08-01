@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Iris</title>
+    <style>
+      :root {
+        font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+        color: #0f0f0f;
+        background-color: #f6f6f6;
+      }
+      body {
+        margin: 0;
+        display: flex;
+        justify-content: center;
+      }
+      main {
+        max-width: 640px;
+        padding: 8vh 1.5em;
+        text-align: center;
+      }
+      h1 {
+        margin-bottom: 0.3em;
+      }
+      p.tagline {
+        opacity: 0.75;
+        margin-top: 0;
+      }
+      .downloads {
+        display: flex;
+        gap: 0.8em;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin: 2em 0;
+      }
+      a.button {
+        display: inline-block;
+        border-radius: 8px;
+        padding: 0.7em 1.4em;
+        font-weight: 600;
+        text-decoration: none;
+        color: #0f0f0f;
+        background-color: #ffffff;
+        border: 1px solid #ccc;
+        box-shadow: 0 2px 2px rgba(0, 0, 0, 0.15);
+      }
+      a.button:hover {
+        border-color: #396cd8;
+      }
+      .hinweis {
+        font-size: 0.9em;
+        opacity: 0.6;
+        margin-top: 3em;
+      }
+      code {
+        background: rgba(0, 0, 0, 0.06);
+        padding: 0.1em 0.4em;
+        border-radius: 4px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color: #f6f6f6;
+          background-color: #2f2f2f;
+        }
+        a.button {
+          color: #ffffff;
+          background-color: #0f0f0f98;
+          border-color: #444;
+        }
+        code {
+          background: rgba(255, 255, 255, 0.12);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Iris</h1>
+      <p class="tagline">
+        Ein persönlicher Agent. Ein einziges Textfeld steuert alles.
+      </p>
+
+      <div class="downloads">
+        <a class="button" href="https://github.com/karlgrehn/Sprachbot/releases/latest">
+          Für Windows herunterladen
+        </a>
+        <a class="button" href="https://github.com/karlgrehn/Sprachbot/releases/latest">
+          Für Linux herunterladen
+        </a>
+      </div>
+
+      <p>
+        Läuft lokal auf deinem Rechner, ohne Internet, sobald
+        <a href="https://ollama.com/">Ollama</a> installiert ist.
+        Quellcode und Ausbaustufen:
+        <a href="https://github.com/karlgrehn/Sprachbot">github.com/karlgrehn/Sprachbot</a>.
+      </p>
+
+      <p class="hinweis">
+        Beide Buttons führen zur GitHub-Release-Seite — dort liegen die
+        passenden Installer (<code>.exe</code>/<code>.msi</code> für
+        Windows, <code>.AppImage</code> für Linux) als Anhang.
+      </p>
+    </main>
+  </body>
+</html>

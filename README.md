@@ -123,10 +123,20 @@ im Repo — mit einer echten `.exe`/`.msi` (Windows) und einem `.AppImage`
 veröffentlichen ist eine eigene, manuelle Entscheidung.
 
 **Vercel eignet sich nicht, um die App selbst zu hosten** — Vercel baut und
-hostet Web-Apps/statische Seiten, keine nativen Desktop-Programme. Was
-Vercel leisten könnte: eine schlichte Download-Seite, die auf den jeweils
-neuesten GitHub-Release-Anhang verlinkt. Das würde eine eigene, von dir
-autorisierte Vercel-Verbindung voraussetzen.
+hostet Web-Apps/statische Seiten, keine nativen Desktop-Programme.
+`web/index.html` ist eine schlichte, fertige Download-Landingpage
+(reines HTML/CSS, kein Build-Schritt) mit Links auf die GitHub-
+Release-Seite. Um sie auf Vercel zu deployen:
+
+1. Vercel-Connector unter den claude.ai-Verbindungseinstellungen
+   autorisieren (das kann diese Sitzung nicht selbst tun).
+2. Repo in Vercel importieren, **Root Directory** auf `web` setzen,
+   kein Build-Command nötig.
+
+**Wichtig:** Der Release-Workflow legt Releases als **Entwurf** an.
+Die Download-Links auf der Landingpage funktionieren erst, sobald ein
+Release veröffentlicht (nicht mehr Entwurf) ist — das ist bewusst eine
+eigene, manuelle Freigabe.
 
 ## Voraussetzungen
 
