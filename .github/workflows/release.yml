@@ -174,14 +174,16 @@ jobs:
 
       - name: Offline-Variante bauen
         shell: bash
-        # linuxdeploy/appimagetool sind selbst als AppImage ausgeliefert und
-        # brauchen FUSE zum Mounten - auf GitHub-Actions-Runnern (auch
-        # ubuntu-22.04) i. d. R. nicht verfuegbar ("failed to run
-        # linuxdeploy"). APPIMAGE_EXTRACT_AND_RUN=1 entpackt statt zu
-        # mounten; auf Windows wirkungslos, daher gefahrlos immer gesetzt.
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: npm run tauri build -- --config src-tauri/tauri.offline.conf.json --features offline-bundle
+        # --verbose ist hier kein Debugging-Luxus, sondern noetig, um den
+        # echten Fehler ueberhaupt zu sehen: Tauris eigener AppImage-Bundler
+        # (crates/tauri-bundler/src/bundle/linux/appimage/linuxdeploy.rs)
+        # verwirft linuxdeploys stderr komplett und meldet nur das nutzlose
+        # "failed to run linuxdeploy", solange kein --verbose gesetzt ist
+        # (per echtem Blick in den Tauri-Quellcode bestaetigt, nicht
+        # geraten). APPIMAGE_EXTRACT_AND_RUN setzt Tauri intern ohnehin
+        # bereits selbst (dieselbe Datei, Zeile ~191) - die eigene Env-Var
+        # hier war redundant und wurde entfernt.
+        run: npm run tauri build -- --verbose --config src-tauri/tauri.offline.conf.json --features offline-bundle
 
       # Noch nicht auf einem echten Gerät bestätigt: wo genau Tauri den
       # Ollama-Sidecar relativ zu den gebündelten Ressourcen (lib/, dist/,

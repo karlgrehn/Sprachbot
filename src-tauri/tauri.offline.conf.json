@@ -9,6 +9,11 @@
   "bundle": {
     "externalBin": ["binaries/ollama"],
     "targets": ["nsis", "appimage"],
+    "windows": {
+      "nsis": {
+        "compression": "zlib"
+      }
+    },
     "resources": {
       "../dist": "dist",
       "../bundled-model": "bundled-model",
