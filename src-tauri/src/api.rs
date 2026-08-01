@@ -12,7 +12,9 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::PathBuf;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 
 use crate::command::{CommandResult, PermissionRequest};
 use crate::{hardware, mcp, message, ollama, permissions, postfach, registry};
@@ -311,7 +313,16 @@ async fn ask_handler(
         .map_err(bad_gateway)
 }
 
-fn router(state: AppState) -> Router {
+/// `dist_dir`: die gebaute Oberfläche (Vite-Output). Wird als Fallback nach
+/// allen `/api/*`-Routen ausgeliefert — dasselbe HTML/JS/CSS, das auch das
+/// Tauri-Fenster zeigt, jetzt zusätzlich über HTTP erreichbar. Das ist die
+/// Voraussetzung für Thin Clients (docs/PLAN.md, Abschnitt 3/4): ein Handy,
+/// das über Tailscale denselben Port anspricht, bekommt Oberfläche und
+/// Kern aus einer Quelle, ohne dass sich am Frontend-Code etwas ändert.
+/// Existiert `dist_dir` nicht (z. B. während `tauri dev` ohne vorherigen
+/// `npm run build`), liefert der Fallback schlicht 404 — das Tauri-Fenster
+/// selbst ist davon nicht betroffen, es lädt sein Frontend unabhängig davon.
+fn router(state: AppState, dist_dir: PathBuf) -> Router {
     Router::new()
         .route("/api/status", get(status_handler))
         .route("/api/models", get(models_handler))
@@ -325,11 +336,15 @@ fn router(state: AppState) -> Router {
         .route("/api/ask", post(ask_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
+        .fallback_service(ServeDir::new(dist_dir))
 }
 
 /// Startet den Kern und blockiert, bis er beendet wird. Bindet nur an
-/// 127.0.0.1 — in M1/M2 ist Iris ausschließlich lokal erreichbar.
-pub async fn serve() {
+/// 127.0.0.1 — Fernzugriff (Thin Client) läuft über `tailscale serve`,
+/// nicht darüber, dass Iris selbst auf allen Netzwerkschnittstellen
+/// lauscht. Es gibt keine eigene Authentifizierung; wer die Adresse im
+/// Tailnet erreicht, kann den Kern benutzen (siehe README).
+pub async fn serve(dist_dir: PathBuf) {
     let state = AppState {
         verbosity: registry::new_state(),
         permissions: permissions::new_state(),
@@ -339,7 +354,7 @@ pub async fn serve() {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", PORT))
         .await
         .expect("Iris-Kern konnte Port nicht binden");
-    axum::serve(listener, router(state))
+    axum::serve(listener, router(state, dist_dir))
         .await
         .expect("Iris-Kern abgestürzt");
 }

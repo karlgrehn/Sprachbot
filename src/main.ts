@@ -1,12 +1,27 @@
 // Iris-Oberfläche: spricht ausschließlich über HTTP mit dem lokalen Kern
 // (src-tauri/src/api.rs), nie über Tauri-`invoke`. Damit ist dieselbe
-// Oberfläche später ohne Änderung als Thin Client über Tailscale nutzbar
-// (siehe docs/PLAN.md, Abschnitt 3). Auch "/help" ist kein Sonderfall hier
-// im Frontend — es läuft wie jeder andere Prompt über /api/ask, der Kern
-// erkennt es (siehe api.rs::help_command).
+// Oberfläche unverändert als Thin Client nutzbar (docs/PLAN.md, Abschnitt 3):
+// im Tauri-Fenster läuft sie von "localhost", auf einem Handy über Tailscale
+// vom Hostnamen/der IP des Worker-Laptops — in beiden Fällen läuft der Kern
+// auf demselben Host wie die Seite selbst, nur der Port ist fest. Auch
+// "/help" ist kein Sonderfall hier im Frontend — es läuft wie jeder andere
+// Prompt über /api/ask, der Kern erkennt es (siehe api.rs::help_command).
 
-// Muss mit PORT in src-tauri/src/api.rs übereinstimmen.
-const API_BASE = "http://127.0.0.1:47615";
+// Der Port muss mit PORT in src-tauri/src/api.rs übereinstimmen. Der Host
+// ergibt sich aus der Seite selbst, damit kein Einstellungsfeld nötig ist.
+const API_BASE = `${location.protocol}//${location.hostname}:47615`;
+
+// Macht dieselbe Oberfläche auf Android/iOS/Desktop installierbar
+// (docs/PLAN.md, Abschnitt 4). Nur die App-Shell wird zwischengespeichert,
+// nie /api/* (siehe public/sw.js).
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      // Kein Absturz, falls z. B. über http:// ohne Secure-Context geladen —
+      // die App funktioniert auch ganz ohne Service Worker.
+    });
+  });
+}
 
 interface StatusResponse {
   ram_gb: number;
@@ -138,13 +153,17 @@ async function init() {
   const statusResp = await fetchWithRetry("/api/status");
   const status: StatusResponse = await statusResp.json();
 
+  // Der Button bleibt in jedem Fall bedienbar: Registry-Aktionen,
+  // Berechtigungen, Postfach und /help brauchen kein Ollama (siehe
+  // api.rs::ask_handler — die werden vor dem Ollama-Fallback erkannt).
+  // Nur eine echte Modellanfrage ohne laufendes Ollama scheitert dann mit
+  // einer klaren Fehlermeldung.
   if (!status.ollama_available) {
     setStatus(
       `Ollama läuft nicht auf diesem Gerät. Empfohlenes Modell für ${status.ram_gb.toFixed(
         1,
-      )} GB RAM: ${status.recommended_model}. Bitte Ollama starten.`,
+      )} GB RAM: ${status.recommended_model}. Bitte Ollama starten — Befehle wie /help funktionieren trotzdem.`,
     );
-    sendButton.disabled = true;
     populateModelSelect([], status.recommended_model);
     return;
   }
@@ -157,7 +176,6 @@ async function init() {
         1,
       )} GB RAM: ollama pull ${status.recommended_model}`,
     );
-    sendButton.disabled = true;
     return;
   }
 

@@ -104,6 +104,31 @@ M1 gilt erst als fertig, wenn das auf einem echten Rechner mit installiertem
 Ollama getestet wurde — das kann in dieser Sandbox nicht verifiziert werden
 (siehe Abschnitt „Bekannte Einschränkung dieser Sandbox" unten).
 
+**Thin Clients (Android/iOS/Desktop-Installation): fertig, ungetestet auf
+echten Mobilgeräten.** Vorgezogen aus M6, auf Wunsch.
+
+- [x] `public/manifest.json` + `public/sw.js`: dieselbe Oberfläche ist als
+      PWA installierbar — auf Android/iOS per „Zum Home-Bildschirm", auf
+      Desktop-Chrome/Edge per Install-Button in der Adressleiste. Das *ist*
+      die "Installationsversion" fürs Laptop, zusätzlich zur nativen
+      `.exe`/`.AppImage` aus dem Release-Build.
+- [x] Der Kern liefert die gebaute Oberfläche jetzt selbst aus
+      (`tower_http::services::ServeDir` als Fallback in `api.rs`) — ein
+      Handy, das über Tailscale denselben Port erreicht, bekommt Oberfläche
+      und API von einer Adresse, ohne eigenen Webserver
+- [x] `API_BASE` im Frontend ist nicht mehr fest auf `127.0.0.1` verdrahtet,
+      sondern ergibt sich aus dem Host, von dem die Seite selbst geladen
+      wurde — kein Einstellungsfeld für die Server-Adresse nötig
+- [x] Mit echtem Playwright/Chromium end-to-end getestet: Seite lädt vom
+      Kern, Manifest verlinkt, Service Worker registriert sich wirklich,
+      `/help` funktioniert im echten Browser
+- [ ] **Auf einem echten Android-/iOS-Gerät installiert und benutzt.** Kann
+      keine Sandbox der Welt prüfen — Safari/Chrome auf echter Hardware,
+      echtes „Zum Home-Bildschirm hinzufügen" nötig.
+- [ ] **Tailscale tatsächlich eingerichtet und ein Handy hat den Laptop
+      darüber erreicht.** Siehe „Thin Client einrichten" unten für die
+      genauen Schritte.
+
 ## Download / Release-Build
 
 Es gibt noch keinen veröffentlichten Download. Kein Sandbox-Build kann eine
@@ -199,6 +224,41 @@ curl -X POST http://127.0.0.1:47615/api/mcp/tools/call \
   -d '{"url":"https://beispiel.de/mcp","tool":"irgendein_werkzeug","arguments":{}}'
 ```
 
+## Thin Client einrichten (Android, iOS, weiteres Desktop-Gerät)
+
+Kein eigener Server nötig — der Kern liefert die Oberfläche selbst mit
+(siehe Status oben). Auf dem Worker-Laptop, auf dem Iris bereits läuft:
+
+1. [Tailscale](https://tailscale.com/) installieren und anmelden (auf dem
+   Laptop und auf dem Handy/Zweitgerät, im selben Tailnet).
+2. Auf dem Laptop, während Iris läuft:
+   ```bash
+   tailscale serve --bg 47615
+   ```
+   Das reicht `127.0.0.1:47615` verschlüsselt über das Tailnet durch —
+   Iris selbst muss dafür an keiner zusätzlichen Netzwerkschnittstelle
+   lauschen. `tailscale serve status` zeigt die resultierende Adresse
+   (etwas wie `https://<laptopname>.<tailnet>.ts.net`).
+3. Auf dem Handy: diese Adresse im Browser öffnen, dann
+   „Zum Home-Bildschirm hinzufügen" (iOS Safari) bzw. den
+   Installieren-Hinweis von Chrome (Android) bestätigen.
+4. Auf einem weiteren Laptop/Desktop genügt der normale
+   Install-Button in der Adressleiste (Chrome/Edge) — das ist zugleich
+   die "Installationsversion" für Rechner, auf denen die native App
+   nicht installiert werden soll.
+
+**Ohne eigene Authentifizierung:** Wer die Tailnet-Adresse erreicht, kann
+den Kern benutzen — Tailscales eigene Geräte-ACLs sind die Sicherheitsgrenze,
+nicht Iris selbst (docs/PLAN.md, Abschnitt 7: „Fernzugriff: Tailscale").
+Das folgt bewusst der Vorgabe „ohne Hosting, ohne Portfreigabe".
+
+**Nicht in dieser Sandbox verifizierbar:** dass ein echtes Telefon per
+Tailscale tatsächlich verbindet und die Installation auf echtem iOS/Android
+funktioniert. Getestet wurde die Web-Seite selbst (Manifest, Service
+Worker, gleiche Oberfläche vom Kern ausgeliefert) mit echtem
+Playwright/Chromium — das Verhalten von Safaris „Zum Home-Bildschirm" oder
+Chromes Install-Prompt auf echter Hardware kann nur ein echtes Gerät zeigen.
+
 ## Architektur (Kurzfassung)
 
 Drei Schichten (Details in [`docs/PLAN.md`](docs/PLAN.md), Abschnitt 5):
@@ -279,3 +339,18 @@ einen echten Systembrowser, der einen echten Nutzer zur Zustimmung zeigt,
 und einen echten Betreiber, der Iris als "fremden" Client akzeptiert. Auf
 einer normalen Linux-Arbeitsstation mit installierten Tauri-Voraussetzungen
 sollte `npm run tauri dev` ohne Weiteres funktionieren.
+
+Für die Thin Clients (PWA) galt die Grenze umgekehrt zu sonst: das
+vorinstallierte, headless Chromium in dieser Sandbox erlaubte zum ersten
+Mal einen echten Browser-Test der Oberfläche selbst. `npm run build` hat
+das reale `dist/` erzeugt, der reale `api.rs`-Kern (nicht Tauri — die
+Rust-Logik hängt nirgends vom `tauri`-Crate ab) hat es über
+`ServeDir`-Fallback ausgeliefert, und Playwright hat gegen `127.0.0.1:47615`
+genau das nachgestellt, was ein Handy über Tailscale sähe: Titel korrekt,
+Manifest verlinkt und gültig, Service Worker registriert sich wirklich,
+`/help` in echtem Chromium eingetippt und die echte Antwort im DOM
+geprüft. Dabei kam ein echter UX-Fehler ans Licht — der Senden-Button war
+ohne laufendes Ollama komplett gesperrt, obwohl `/help` und alle anderen
+Registry-/Berechtigungs-Befehle kein Ollama brauchen — behoben. Nicht
+verifizierbar bleiben echtes Tailscale-Netzwerk, echtes iOS/Android-Gerät
+und das jeweilige "Zum Home-Bildschirm hinzufügen".

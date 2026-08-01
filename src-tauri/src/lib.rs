@@ -15,8 +15,17 @@ mod registry;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .setup(|_app| {
-            tauri::async_runtime::spawn(api::serve());
+        .setup(|app| {
+            // Gebündelt (Release-Build): "dist" liegt im Resource-Verzeichnis
+            // (siehe tauri.conf.json "bundle.resources"). Im Entwicklungsbetrieb
+            // gibt es das noch nicht zwangsläufig — dann greift der relative
+            // Pfad, sobald einmal `npm run build` gelaufen ist.
+            use tauri::Manager;
+            let dist_dir = app
+                .path()
+                .resolve("dist", tauri::path::BaseDirectory::Resource)
+                .unwrap_or_else(|_| std::path::PathBuf::from("../dist"));
+            tauri::async_runtime::spawn(api::serve(dist_dir));
             Ok(())
         })
         .run(tauri::generate_context!())

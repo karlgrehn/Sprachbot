@@ -5,6 +5,17 @@
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Iris</title>
+
+    <!-- PWA: macht dieselbe Oberfläche auf Android/iOS/Desktop installierbar
+         (docs/PLAN.md, Abschnitt 4 — "iOS/Android: Thin, PWA, keine native App"). -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#f6f6f6" />
+    <link rel="icon" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Iris" />
+
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
