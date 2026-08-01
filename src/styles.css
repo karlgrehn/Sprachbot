@@ -92,14 +92,23 @@ button:hover:not(:disabled) {
 }
 
 #output {
-  white-space: pre-wrap;
-  word-wrap: break-word;
   min-height: 4em;
   margin-top: 1.5em;
   padding: 0.8em;
   border-radius: 8px;
   background-color: #ffffff;
   border: 1px solid #ccc;
+}
+
+#output-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: inherit;
+}
+
+#output-actions:not(:empty) {
+  margin-top: 0.8em;
 }
 
 @media (prefers-color-scheme: dark) {

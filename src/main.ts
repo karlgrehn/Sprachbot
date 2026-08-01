@@ -19,16 +19,64 @@ interface RegistryAction {
   reversible: boolean;
 }
 
+interface PermissionDef {
+  id: string;
+  anzeigetext: string;
+}
+
+interface GrantedPermission {
+  id: string;
+  granted_at_unix: number;
+}
+
+interface PermissionRequest {
+  id: string;
+  anzeigetext: string;
+}
+
 interface AskResponse {
   response: string;
   command_handled: boolean;
+  permission_request: PermissionRequest | null;
 }
 
 let statusEl: HTMLElement | null;
 let outputEl: HTMLElement | null;
+let outputTextEl: HTMLElement | null;
+let outputActionsEl: HTMLElement | null;
 let modelSelect: HTMLSelectElement | null;
 let promptInput: HTMLTextAreaElement | null;
 let sendButton: HTMLButtonElement | null;
+
+function setOutput(text: string) {
+  if (outputTextEl) outputTextEl.textContent = text;
+  if (outputActionsEl) outputActionsEl.innerHTML = "";
+}
+
+// Der Button ist keine Bestätigung für eine einzelne Handlung, sondern der
+// Moment, in dem eine Berechtigung dauerhaft erteilt wird (docs/PLAN.md,
+// Abschnitt 2). Anzeigetext und ID kommen unverändert aus dem Kern.
+function showPermissionButton(request: PermissionRequest) {
+  if (!outputActionsEl) return;
+  outputActionsEl.innerHTML = "";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Erlauben";
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    const resp = await fetch(`${API_BASE}/api/permissions/grant`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: request.id }),
+    });
+    if (resp.ok) {
+      setOutput(`✓ Erteilt: ${request.anzeigetext}.`);
+    } else {
+      setOutput(`Fehler beim Erteilen: ${await resp.text()}`);
+    }
+  });
+  outputActionsEl.appendChild(button);
+}
 
 function setStatus(text: string) {
   if (statusEl) statusEl.textContent = text;
@@ -107,9 +155,14 @@ async function init() {
 // Erzeugt aus der Registry, nicht aus dem Modellgedächtnis — sonst
 // erfindet Iris Funktionen, die es nicht gibt (docs/PLAN.md, Abschnitt 2).
 async function showHelp() {
-  if (!outputEl) return;
-  const resp = await fetch(`${API_BASE}/api/registry`);
-  const { actions }: { actions: RegistryAction[] } = await resp.json();
+  const [registryResp, permissionsResp] = await Promise.all([
+    fetch(`${API_BASE}/api/registry`),
+    fetch(`${API_BASE}/api/permissions`),
+  ]);
+  const { actions }: { actions: RegistryAction[] } = await registryResp.json();
+  const { definitions, active }: { definitions: PermissionDef[]; active: GrantedPermission[] } =
+    await permissionsResp.json();
+  const activeIds = new Set(active.map((a) => a.id));
 
   const lines = [
     "Was Iris gerade kann (aus der Registry, nicht vom Modell erfunden):",
@@ -118,9 +171,14 @@ async function showHelp() {
       (a) => `- ${a.anzeigetext}${a.reversible ? " (rückgängig machbar)" : ""}`,
     ),
     "",
-    "Sag Iris einfach, was du willst — z. B. \"antworte ab jetzt kurz\" oder \"mach das rückgängig\".",
+    "Berechtigungen:",
+    ...definitions.map(
+      (p) => `- [${activeIds.has(p.id) ? "erteilt" : "nicht erteilt"}] ${p.anzeigetext}`,
+    ),
+    "",
+    "Sag Iris einfach, was du willst — z. B. \"antworte ab jetzt kurz\", \"mach das rückgängig\" oder \"verbinde mein WhatsApp\".",
   ];
-  outputEl.textContent = lines.join("\n");
+  setOutput(lines.join("\n"));
 }
 
 async function ask() {
@@ -134,7 +192,7 @@ async function ask() {
   }
 
   sendButton.disabled = true;
-  outputEl.textContent = "Iris denkt nach …";
+  setOutput("Iris denkt nach …");
 
   try {
     const resp = await fetch(`${API_BASE}/api/ask`, {
@@ -145,10 +203,14 @@ async function ask() {
     if (!resp.ok) {
       throw new Error(await resp.text());
     }
-    const { response, command_handled }: AskResponse = await resp.json();
-    outputEl.textContent = command_handled ? `✓ ${response}` : response;
+    const { response, command_handled, permission_request }: AskResponse =
+      await resp.json();
+    setOutput(command_handled ? `✓ ${response}` : response);
+    if (permission_request) {
+      showPermissionButton(permission_request);
+    }
   } catch (err) {
-    outputEl.textContent = `Fehler: ${err}`;
+    setOutput(`Fehler: ${err}`);
   } finally {
     sendButton.disabled = false;
   }
@@ -157,6 +219,8 @@ async function ask() {
 window.addEventListener("DOMContentLoaded", () => {
   statusEl = document.querySelector("#status-line");
   outputEl = document.querySelector("#output");
+  outputTextEl = document.querySelector("#output-text");
+  outputActionsEl = document.querySelector("#output-actions");
   modelSelect = document.querySelector("#model-select");
   promptInput = document.querySelector("#prompt-input");
   sendButton = document.querySelector("#send-button");

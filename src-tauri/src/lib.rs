@@ -1,6 +1,9 @@
 mod api;
 mod hardware;
+mod message;
 mod ollama;
+mod permissions;
+mod postfach;
 mod registry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
