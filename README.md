@@ -140,17 +140,17 @@ Auslösen:
 - **Manuell**: Im GitHub-Repo unter „Actions" → „Release" → „Run workflow".
 - **Per Tag**: `git tag v0.1.0 && git push origin v0.1.0`.
 
-### Zwei Varianten pro Plattform
+### Ein Download pro Plattform
 
-| | Normal | Offline |
-|---|---|---|
-| Enthält | nur die App | App + Ollama + Modell (`gemma3:1b`) als Sidecar |
-| Voraussetzung | Ollama separat installiert, Modell einmal gezogen | keine — läuft nach der Installation ohne Internet |
-| Größe | wenige MB | mehrere GB |
-
-Die Landingpage (`web/index.html`) fragt beim Herunterladen immer, welche
-Variante gewünscht ist, und weist bei „Offline" auf den höheren
-Speicherbedarf hin.
+Der Workflow baut intern zwei Varianten (`normal`: nur die App, setzt eine
+separat installierte Ollama voraus; `offline`: App + Ollama + Modell
+(`gemma3:1b`) als Sidecar, läuft ohne Internet). Die Landingpage
+(`web/index.html`) zeigt davon aber bewusst nur **einen** Button pro
+Plattform — die Offline-Variante, weil sie ohne weitere Entscheidung oder
+Installation einfach funktioniert. Eine Normal/Offline-Auswahl wäre für
+die breite Nutzerschaft unnötige Komplexität; das Manifest enthält beide
+Einträge weiterhin (für einen möglichen späteren „erweiterte Optionen"-Link),
+aktuell wird nur `offline` verlinkt.
 
 ### Repo bleibt privat — Downloads laufen über eigenen Objektspeicher
 
@@ -188,8 +188,9 @@ Werkzeuge für dich übernehmen.
 Vercel baut und hostet Web-Apps/statische Seiten, keine nativen
 Desktop-Programme. `web/index.html` ist eine schlichte, fertige
 Download-Landingpage (reines HTML/CSS, kein Build-Schritt, **kein Link auf
-das Quellcode-Repository**) mit der Normal/Offline-Auswahl. Um sie auf
-Vercel zu deployen:
+das Quellcode-Repository**) mit einem einzigen Download-Button pro
+Plattform (kein Normal/Offline-Entscheidungszwang für die Nutzerschaft).
+Um sie auf Vercel zu deployen:
 
 1. Vercel-Connector unter den claude.ai-Verbindungseinstellungen
    autorisieren (das kann diese Sitzung nicht selbst tun).
@@ -198,7 +199,7 @@ Vercel zu deployen:
    Repo privat ist und nicht mit Vercel verknüpft werden soll.
 3. In `web/index.html` die Konstante `DOWNLOAD_BASE` auf
    `S3_PUBLIC_BASE_URL` setzen, sobald der Objektspeicher eingerichtet ist
-   — vorher bleiben die Download-Buttons bewusst deaktiviert
+   — vorher bleibt der Download-Button bewusst deaktiviert
    („Noch kein Download eingerichtet").
 
 ### Offener Punkt bei der Offline-Variante

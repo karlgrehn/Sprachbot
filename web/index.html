@@ -45,50 +45,29 @@
         border-color: #396cd8;
         background: #396cd81a;
       }
-      .variant-cards {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1em;
-        margin: 1.5em 0;
-        text-align: left;
-      }
-      @media (max-width: 560px) {
-        .variant-cards {
-          grid-template-columns: 1fr;
-        }
-      }
-      .variant-card {
+      .download-card {
         border: 1px solid #ccc;
         border-radius: 10px;
-        padding: 1.2em;
+        padding: 1.5em;
         background: #ffffff;
-        display: flex;
-        flex-direction: column;
+        margin: 1.5em 0;
       }
-      .variant-card h2 {
-        margin: 0 0 0.3em;
-        font-size: 1.1em;
-      }
-      .variant-card p {
+      .download-card p {
         font-size: 0.9em;
         opacity: 0.8;
-        flex-grow: 1;
       }
-      .variant-card .size {
+      .download-card .size {
         font-weight: 600;
         font-size: 0.85em;
         opacity: 0.9;
       }
-      .variant-card .warning {
-        color: #a15c00;
-        font-size: 0.85em;
-      }
       a.button {
         display: inline-block;
-        margin-top: 0.8em;
+        margin-top: 0.5em;
         border-radius: 8px;
-        padding: 0.6em 1.2em;
+        padding: 0.7em 1.6em;
         font-weight: 600;
+        font-size: 1.05em;
         text-decoration: none;
         color: #ffffff;
         background-color: #396cd8;
@@ -125,7 +104,7 @@
           background-color: #2f2f2f;
         }
         .platform-tabs button,
-        .variant-card,
+        .download-card,
         .pwa-hint {
           color: #ffffff;
           background-color: #0f0f0f98;
@@ -153,28 +132,12 @@
         <button type="button" data-platform="linux" aria-pressed="false">Linux</button>
       </div>
 
-      <div class="variant-cards">
-        <div class="variant-card">
-          <h2>Normal</h2>
-          <p>
-            Nur die App. Setzt voraus, dass <a href="https://ollama.com/">Ollama</a>
-            bereits installiert ist (oder danach installiert wird) und ein
-            Modell einmal heruntergeladen wird.
-          </p>
-          <p class="size" data-size-for="normal"></p>
-          <a class="button" data-download="normal" href="#">Herunterladen</a>
-        </div>
-        <div class="variant-card">
-          <h2>Offline</h2>
-          <p>
-            Enthält Ollama und ein Modell bereits fertig eingerichtet —
-            läuft nach der Installation ohne jede weitere
-            Internetverbindung.
-          </p>
-          <p class="warning">Braucht deutlich mehr Speicherplatz.</p>
-          <p class="size" data-size-for="offline"></p>
-          <a class="button" data-download="offline" href="#">Herunterladen</a>
-        </div>
+      <div class="download-card">
+        <p>
+          Eine Datei, alles enthalten. Keine weitere Installation nötig.
+        </p>
+        <p class="size" data-size></p>
+        <a class="button" data-download href="#">Herunterladen</a>
       </div>
 
       <div class="pwa-hint">
@@ -193,7 +156,7 @@
     <script>
       // Öffentliche Basis-Adresse des Objektspeichers (S3/R2/o. Ä. — siehe
       // README "Download-Hosting"). Muss gesetzt werden, sobald der Speicher
-      // eingerichtet ist; bis dahin bleiben die Buttons deaktiviert.
+      // eingerichtet ist; bis dahin bleibt der Button deaktiviert.
       // Entspricht S3_PUBLIC_BASE_URL aus .github/workflows/release.yml.
       const DOWNLOAD_BASE = "";
 
@@ -205,30 +168,25 @@
       }
 
       let platform = "windows";
-      let manifests = {}; // { windows: {normal:{url,bytes}, offline:{...}}, linux: {...} }
+      let manifests = {}; // { windows: {offline:{url,bytes}}, linux: {...} }
 
       function render() {
-        const data = manifests[platform];
-        for (const variant of ["normal", "offline"]) {
-          const link = document.querySelector(`[data-download="${variant}"]`);
-          const sizeEl = document.querySelector(`[data-size-for="${variant}"]`);
-          const entry = data?.[variant];
-          if (entry) {
-            link.href = entry.url;
-            link.removeAttribute("aria-disabled");
-            sizeEl.textContent = `Größe: ${formatBytes(entry.bytes)}`;
-          } else {
-            link.href = "#";
-            link.setAttribute("aria-disabled", "true");
-            sizeEl.textContent = DOWNLOAD_BASE ? "Wird vorbereitet …" : "Noch kein Download eingerichtet";
-          }
+        const link = document.querySelector("[data-download]");
+        const sizeEl = document.querySelector("[data-size]");
+        const entry = manifests[platform]?.offline;
+        if (entry) {
+          link.href = entry.url;
+          link.removeAttribute("aria-disabled");
+          sizeEl.textContent = `Größe: ${formatBytes(entry.bytes)}`;
+        } else {
+          link.href = "#";
+          link.setAttribute("aria-disabled", "true");
+          sizeEl.textContent = DOWNLOAD_BASE ? "Wird vorbereitet …" : "Noch kein Download eingerichtet";
         }
       }
 
-      document.querySelectorAll("a[data-download]").forEach((link) => {
-        link.addEventListener("click", (e) => {
-          if (link.getAttribute("aria-disabled") === "true") e.preventDefault();
-        });
+      document.querySelector("[data-download]").addEventListener("click", (e) => {
+        if (e.currentTarget.getAttribute("aria-disabled") === "true") e.preventDefault();
       });
 
       document.querySelectorAll(".platform-tabs button").forEach((button) => {
@@ -246,6 +204,9 @@
       // Manifeste laden, die der Release-Workflow bei jedem Build ablegt
       // (iris/manifest-windows.json, iris/manifest-linux.json) — keine
       // fest verdrahteten Dateinamen/Versionsnummern hier im Frontend.
+      // Enthalten weiterhin "normal" und "offline"; die Seite zeigt hier
+      // bewusst nur "offline" (fertig eingerichtet, keine Entscheidung
+      // durch die Nutzer:innen nötig).
       if (DOWNLOAD_BASE) {
         for (const key of ["windows", "linux"]) {
           fetch(`${DOWNLOAD_BASE}/iris/manifest-${key}.json`)
