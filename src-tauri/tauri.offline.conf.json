@@ -10,7 +10,7 @@
     "externalBin": ["binaries/ollama"],
     "resources": {
       "../dist": "dist",
-      "bundled-model": "bundled-model",
+      "../bundled-model": "bundled-model",
       "ollama-lib": "lib"
     }
   }
