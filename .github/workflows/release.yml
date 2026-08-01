@@ -5,10 +5,15 @@ name: Release
 # Einschränkung dieser Sandbox". Läuft auf echten GitHub-Runnern mit den
 # richtigen Systemvoraussetzungen für Windows und Linux.
 #
-# Baut zwei Varianten pro Plattform:
+# Baut zwei Varianten pro Desktop-Plattform (Windows/Linux, Job "release"):
 # - normal: nur die App, setzt eine separat installierte Ollama voraus.
 # - offline: bündelt Ollama + ein Modell (gemma3:1b) als Sidecar, läuft
 #   nach der Installation ohne weitere Internetverbindung.
+#
+# Zusätzlich ein Android-APK (Job "release-android", direkter Download,
+# kein Play Store — siehe README "Android-APK: native Verpackung, trotzdem
+# Thin Client" für die bekannten Einschränkungen: selbstsigniert, keine
+# Update-Kontinuität, nur aarch64, nicht auf echtem Gerät verifiziert).
 #
 # Auslösen: manuell über "Run workflow" im Actions-Tab, oder durch einen
 # Tag-Push (z. B. `git tag v0.1.0 && git push origin v0.1.0`).

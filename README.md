@@ -342,6 +342,54 @@ einen Mac mit Xcode und Apple-Entwickler-Konto, und eine ungeklärte Frage,
 wie Ollama überhaupt in einer mobilen App-Sandbox laufen soll. Auf
 ausdrücklichen Wunsch zurückgestellt — Handys bleiben vorerst Thin Clients.
 
+### Android-APK: native Verpackung, trotzdem Thin Client
+
+Die Landingpage bietet für Android zusätzlich zur Web-App ein direktes
+APK herunterzuladen (`release-android`-Job in
+`.github/workflows/release.yml`) — das ist kein Widerspruch zum Punkt
+oben: Fat/Thin beschreibt, **wo gerechnet wird** (auf dem Handy selbst
+oder auf einem entfernten Rechner), nicht **wie die Oberfläche verpackt
+ist** (nativ oder als PWA). Die APK enthält weiterhin keinen eigenen Kern
+(`src-tauri/src/lib.rs`: `api::serve` läuft nur noch `#[cfg(desktop)]`) —
+sie ist ein natives Fenster um dieselbe Oberfläche, die sich über eine
+einmalig eingetragene Serveradresse mit einem entfernten Iris-Rechner
+verbindet (`src/main.ts`, Abschnitt zu `SERVER_ADDRESS_KEY`).
+
+**Warum eine native APK statt nur die ohnehin vorhandene PWA?** Auf
+ausdrücklichen Nutzerwunsch, nach Abwägung der Alternativen: echte
+App-Store-Einreichung (Play Store: 25 $ einmalig, Apple App Store:
+99 $/Jahr + Mac + Xcode + hohes Ablehnungsrisiko wegen „Minimum
+Functionality" bei einem reinen Thin Client) wurde bewusst **nicht**
+gewählt — stattdessen ein direkter APK-Download, technisch auf Android
+möglich (bei iOS nicht: Apple erlaubt keinen Download+Installation
+außerhalb des App Store, siehe die iPhone/iPad-Anleitung auf der
+Landingpage).
+
+**Bekannte Einschränkungen der Android-APK:**
+- **Selbstsigniert, kein Play Store:** bei jedem Build erzeugt die CI
+  einen neuen, zufälligen Signaturschlüssel (`keytool` im
+  `release-android`-Job) statt eines dauerhaften, über Secrets
+  verwalteten Schlüssels. Nutzer:innen sehen beim Installieren eine
+  „Unbekannte Quelle"/„Nicht verifizierter Entwickler"-Warnung — erwartet
+  und nur über eine echte Play-Store-Einreichung vermeidbar.
+- **Keine Update-Kontinuität:** weil sich der Signaturschlüssel jedes Mal
+  ändert, kann Android eine neuere APK nicht als Update über eine
+  ältere Installation hinweg erkennen — Nutzer:innen müssten die alte
+  Version deinstallieren, um eine neue zu installieren. Für einen
+  dauerhaften Schlüssel bräuchte es die in der offiziellen
+  [Tauri-Android-Signing-Doku](https://v2.tauri.app/distribute/sign/android/)
+  beschriebenen Repo-Secrets (`ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`,
+  `ANDROID_KEY_BASE64`) statt der aktuellen Ad-hoc-Erzeugung.
+- **Nur aarch64 (arm64-v8a):** deckt praktisch alle Android-Geräte der
+  letzten Jahre ab, spart aber die Zeit/Größe eines Multi-Architektur-Builds
+  — ein einziges APK statt einer Auswahl, passend zum „ein Klick, dann ist
+  die App da"-Ziel der Landingpage.
+- **Nicht auf echtem Gerät verifiziert:** wie beim Windows/Linux-Build kann
+  diese Sandbox kein Android-SDK/NDK/Gradle ausführen — der Build läuft
+  ausschließlich auf echten GitHub-Runnern. Ob ein Android-Gerät die APK
+  tatsächlich installiert und sich per eingetragener Serveradresse
+  verbindet, ist bislang nicht auf echter Hardware bestätigt.
+
 ## Architektur (Kurzfassung)
 
 Drei Schichten (Details in [`docs/PLAN.md`](docs/PLAN.md), Abschnitt 5):
