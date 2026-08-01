@@ -132,6 +132,19 @@ jobs:
           # bestätigt, siehe README.
           if [ -d ollama-runtime/lib ]; then
             cp -r ollama-runtime/lib src-tauri/ollama-lib
+
+            # Das Ollama-Release buendelt native Laufzeitbibliotheken fuer
+            # JEDEN GPU-Backend (CUDA v12, CUDA v13, Vulkan) - zusammen
+            # ueber 90% der Archivgroesse (~1,9-2,1 GB von ~1,9-1,94 GB je
+            # nach Plattform, per echter Inspektion der Release-Assets
+            # bestaetigt). Die Offline-Variante nutzt ohnehin nur CPU-
+            # Inferenz (das ist genau das, was der Smoke-Test unten
+            # verifiziert). Ungefiltert gebuendelt sprengt das den 2-GB-
+            # Adressraum von NSIS' 32-Bit-makensis.exe ("Internal compiler
+            # error #12345: error mmapping file ... is out of range") und
+            # macht auch den Linux-Bundle-Schritt unnoetig groß/langsam.
+            rm -rf src-tauri/ollama-lib/cuda_v12 src-tauri/ollama-lib/cuda_v13 src-tauri/ollama-lib/vulkan
+            du -sh src-tauri/ollama-lib || true
           else
             echo "Kein lib/-Verzeichnis im Ollama-Release gefunden — nichts zu bündeln."
           fi
@@ -161,6 +174,13 @@ jobs:
 
       - name: Offline-Variante bauen
         shell: bash
+        # linuxdeploy/appimagetool sind selbst als AppImage ausgeliefert und
+        # brauchen FUSE zum Mounten - auf GitHub-Actions-Runnern (auch
+        # ubuntu-22.04) i. d. R. nicht verfuegbar ("failed to run
+        # linuxdeploy"). APPIMAGE_EXTRACT_AND_RUN=1 entpackt statt zu
+        # mounten; auf Windows wirkungslos, daher gefahrlos immer gesetzt.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: npm run tauri build -- --config src-tauri/tauri.offline.conf.json --features offline-bundle
 
       # Noch nicht auf einem echten Gerät bestätigt: wo genau Tauri den
