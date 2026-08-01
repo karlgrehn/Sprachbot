@@ -8,8 +8,48 @@
 // Prompt über /api/ask, der Kern erkennt es (siehe api.rs::help_command).
 
 // Der Port muss mit PORT in src-tauri/src/api.rs übereinstimmen. Der Host
-// ergibt sich aus der Seite selbst, damit kein Einstellungsfeld nötig ist.
-const API_BASE = `${location.protocol}//${location.hostname}:47615`;
+// ergibt sich normalerweise aus der Seite selbst (Browser/PWA/Desktop-Fenster
+// laufen ja vom Host des Kerns). Eine native Android-App lädt die Oberfläche
+// aber aus dem App-Bundle, ohne dass die URL etwas über den entfernten
+// Iris-Rechner verrät — dafür merkt sich Iris einmalig eine manuell
+// eingetragene Adresse (siehe requestServerAddress unten), statt dafür ein
+// Einstellungsmenü zu brauchen: dasselbe eine Textfeld wie für jeden Prompt.
+const SERVER_ADDRESS_KEY = "iris-server-address";
+
+function computeDefaultApiBase(): string {
+  return `${location.protocol}//${location.hostname}:47615`;
+}
+
+function getStoredApiBase(): string | null {
+  try {
+    return localStorage.getItem(SERVER_ADDRESS_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeApiBase(base: string) {
+  try {
+    localStorage.setItem(SERVER_ADDRESS_KEY, base);
+  } catch {
+    // localStorage kann in seltenen Kontexten fehlen — dann fragt Iris bei
+    // jedem Start erneut, statt abzustürzen.
+  }
+}
+
+function normalizeServerAddress(input: string): string {
+  let value = input.trim();
+  if (!/^https?:\/\//.test(value)) {
+    value = `http://${value}`;
+  }
+  value = value.replace(/\/+$/, "");
+  if (!/:\d+$/.test(value)) {
+    value = `${value}:47615`;
+  }
+  return value;
+}
+
+let API_BASE = getStoredApiBase() ?? computeDefaultApiBase();
 
 // Macht dieselbe Oberfläche auf Android/iOS/Desktop installierbar
 // (docs/PLAN.md, Abschnitt 4). Nur die App-Shell wird zwischengespeichert,
@@ -148,6 +188,43 @@ async function fetchWithRetry(path: string, attempts = 10): Promise<Response> {
   throw new Error("unreachable");
 }
 
+// "ask" ist der Normalfall (Textfeld = Prompt an Iris). "configure-address"
+// übernimmt kurzzeitig dasselbe Textfeld für die einmalige Server-Adresse,
+// wenn der Kern unter der automatisch ermittelten Adresse nicht erreichbar
+// ist (typischerweise: native Android-Thin-Client-App, siehe oben).
+type Mode = "ask" | "configure-address";
+let mode: Mode = "ask";
+
+function requestServerAddress() {
+  mode = "configure-address";
+  setStatus(
+    "Kein Iris-Kern unter dieser Adresse gefunden. Adresse des Rechners eintragen, auf dem Iris läuft (z. B. eine Tailscale-Adresse) — einmalig, wird gemerkt.",
+  );
+  promptInput.value = "";
+  promptInput.placeholder = "z. B. mein-rechner.tailxxxx.ts.net";
+  sendButton.textContent = "Verbinden";
+}
+
+async function configureAddress() {
+  const address = promptInput.value.trim();
+  if (!address) return;
+  API_BASE = normalizeServerAddress(address);
+  storeApiBase(API_BASE);
+  promptInput.value = "";
+  promptInput.placeholder = "Frag Iris etwas …";
+  sendButton.textContent = "Senden";
+  mode = "ask";
+  await trySetup();
+}
+
+async function trySetup() {
+  try {
+    await init();
+  } catch {
+    requestServerAddress();
+  }
+}
+
 async function init() {
   setStatus("Prüfe Iris-Kern …");
   const statusResp = await fetchWithRetry("/api/status");
@@ -219,8 +296,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
   el("prompt-form").addEventListener("submit", (e) => {
     e.preventDefault();
-    ask();
+    if (mode === "configure-address") {
+      configureAddress();
+    } else {
+      ask();
+    }
   });
 
-  init().catch((err) => setStatus(`Fehler beim Start: ${err}`));
+  trySetup();
 });
