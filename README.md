@@ -384,11 +384,16 @@ Landingpage).
   letzten Jahre ab, spart aber die Zeit/Größe eines Multi-Architektur-Builds
   — ein einziges APK statt einer Auswahl, passend zum „ein Klick, dann ist
   die App da"-Ziel der Landingpage.
-- **Nicht auf echtem Gerät verifiziert:** wie beim Windows/Linux-Build kann
-  diese Sandbox kein Android-SDK/NDK/Gradle ausführen — der Build läuft
-  ausschließlich auf echten GitHub-Runnern. Ob ein Android-Gerät die APK
-  tatsächlich installiert und sich per eingetragener Serveradresse
-  verbindet, ist bislang nicht auf echter Hardware bestätigt.
+- **CI-Build grün, aber nicht auf echtem Gerät verifiziert:** `release-android`
+  baut inzwischen zuverlässig eine echte, signierte APK (zuletzt bestätigt:
+  ~15 MB, `app-universal-release.apk`) — bis dahin brauchte es mehrere
+  echte Fehlerbehebungen (falsche NDK-Version, falscher `sdkmanager`-Pfad,
+  OpenSSL-Cross-Compile-Fehler durch reqwests native-tls-Backend → rustls,
+  zwei verschiedene Kotlin-Import-Fehler im generierten
+  `app/build.gradle.kts`), alle per echtem CI-Log gefunden und behoben, nicht
+  geraten. Was diese Sandbox weiterhin nicht prüfen kann: ob ein echtes
+  Android-Gerät die APK installiert und sich per eingetragener Serveradresse
+  tatsächlich verbindet — dafür bräuchte es echte Hardware.
 
 ## Architektur (Kurzfassung)
 
