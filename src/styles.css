@@ -24,6 +24,18 @@ h1 {
   text-align: center;
 }
 
+.hint {
+  text-align: center;
+  font-size: 0.9em;
+  opacity: 0.6;
+  margin-top: 0;
+}
+
+.hint code {
+  font-family: inherit;
+  font-weight: 600;
+}
+
 .status {
   text-align: center;
   opacity: 0.75;

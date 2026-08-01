@@ -13,6 +13,17 @@ interface StatusResponse {
   ollama_available: boolean;
 }
 
+interface RegistryAction {
+  id: string;
+  anzeigetext: string;
+  reversible: boolean;
+}
+
+interface AskResponse {
+  response: string;
+  command_handled: boolean;
+}
+
 let statusEl: HTMLElement | null;
 let outputEl: HTMLElement | null;
 let modelSelect: HTMLSelectElement | null;
@@ -93,10 +104,34 @@ async function init() {
   );
 }
 
+// Erzeugt aus der Registry, nicht aus dem Modellgedächtnis — sonst
+// erfindet Iris Funktionen, die es nicht gibt (docs/PLAN.md, Abschnitt 2).
+async function showHelp() {
+  if (!outputEl) return;
+  const resp = await fetch(`${API_BASE}/api/registry`);
+  const { actions }: { actions: RegistryAction[] } = await resp.json();
+
+  const lines = [
+    "Was Iris gerade kann (aus der Registry, nicht vom Modell erfunden):",
+    "",
+    ...actions.map(
+      (a) => `- ${a.anzeigetext}${a.reversible ? " (rückgängig machbar)" : ""}`,
+    ),
+    "",
+    "Sag Iris einfach, was du willst — z. B. \"antworte ab jetzt kurz\" oder \"mach das rückgängig\".",
+  ];
+  outputEl.textContent = lines.join("\n");
+}
+
 async function ask() {
   if (!outputEl || !promptInput || !modelSelect || !sendButton) return;
   const prompt = promptInput.value.trim();
   if (!prompt) return;
+
+  if (prompt.toLowerCase() === "/help") {
+    promptInput.value = "";
+    return showHelp();
+  }
 
   sendButton.disabled = true;
   outputEl.textContent = "Iris denkt nach …";
@@ -110,8 +145,8 @@ async function ask() {
     if (!resp.ok) {
       throw new Error(await resp.text());
     }
-    const { response } = await resp.json();
-    outputEl.textContent = response;
+    const { response, command_handled }: AskResponse = await resp.json();
+    outputEl.textContent = command_handled ? `✓ ${response}` : response;
   } catch (err) {
     outputEl.textContent = `Fehler: ${err}`;
   } finally {
