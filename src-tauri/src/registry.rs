@@ -9,6 +9,7 @@
 //! Rote (berechtigungspflichtige) Aktionen kommen erst mit M2, wenn es
 //! überhaupt etwas gibt, das nicht trivial rückgängig zu machen ist.
 
+use crate::command::CommandResult;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 
@@ -19,23 +20,23 @@ pub struct Action {
     pub reversible: bool,
 }
 
-pub const REGISTRY: &[Action] = &[
-    Action {
-        id: "antwortstil.kurz",
-        anzeigetext: "Iris antwortet kurz und knapp",
-        reversible: true,
-    },
-    Action {
-        id: "antwortstil.normal",
-        anzeigetext: "Iris antwortet in normaler Länge",
-        reversible: true,
-    },
-    Action {
-        id: "antwortstil.ausfuehrlich",
-        anzeigetext: "Iris antwortet ausführlich",
-        reversible: true,
-    },
-];
+const KURZ: Action = Action {
+    id: "antwortstil.kurz",
+    anzeigetext: "Iris antwortet kurz und knapp",
+    reversible: true,
+};
+const NORMAL: Action = Action {
+    id: "antwortstil.normal",
+    anzeigetext: "Iris antwortet in normaler Länge",
+    reversible: true,
+};
+const AUSFUEHRLICH: Action = Action {
+    id: "antwortstil.ausfuehrlich",
+    anzeigetext: "Iris antwortet ausführlich",
+    reversible: true,
+};
+
+pub const REGISTRY: &[Action] = &[KURZ, NORMAL, AUSFUEHRLICH];
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -54,20 +55,13 @@ impl Verbosity {
         }
     }
 
-    fn action_id(self) -> &'static str {
+    fn action(self) -> &'static Action {
         match self {
-            Verbosity::Kurz => "antwortstil.kurz",
-            Verbosity::Normal => "antwortstil.normal",
-            Verbosity::Ausfuehrlich => "antwortstil.ausfuehrlich",
+            Verbosity::Kurz => &KURZ,
+            Verbosity::Normal => &NORMAL,
+            Verbosity::Ausfuehrlich => &AUSFUEHRLICH,
         }
     }
-}
-
-fn action_for(v: Verbosity) -> &'static Action {
-    REGISTRY
-        .iter()
-        .find(|a| a.id == v.action_id())
-        .expect("Registry-Eintrag für Verbosity fehlt")
 }
 
 pub struct VerbosityState {
@@ -97,19 +91,20 @@ pub fn current_instruction(state: &SharedState) -> String {
 /// Erkennt eine grüne Einstellungsänderung oder ein Rückgängig im freien
 /// Prompt-Text und führt sie sofort aus. `None`, wenn der Text keine
 /// bekannte Aktion anfordert — dann läuft der Prompt normal ans Modell.
-pub fn handle_command(state: &SharedState, prompt: &str) -> Option<String> {
+pub fn handle_command(state: &SharedState, prompt: &str) -> Option<CommandResult> {
     let lower = prompt.to_lowercase();
 
     let is_undo = lower.contains("rückgängig") || lower.contains("rueckgaengig");
     if is_undo {
         let mut s = state.lock().unwrap();
-        return Some(match s.history.pop() {
+        let message = match s.history.pop() {
             Some(previous) => {
                 s.current = previous;
-                format!("Rückgängig gemacht. {}.", action_for(previous).anzeigetext)
+                format!("Rückgängig gemacht. {}.", previous.action().anzeigetext)
             }
             None => "Nichts zum Rückgängigmachen vorhanden.".to_string(),
-        });
+        };
+        return Some(CommandResult::message(message));
     }
 
     let mentions_antwort = lower.contains("antwort");
@@ -131,6 +126,6 @@ pub fn handle_command(state: &SharedState, prompt: &str) -> Option<String> {
             s.history.push(previous);
             s.current = new_style;
         }
-        format!("{}.", action_for(new_style).anzeigetext)
+        CommandResult::message(format!("{}.", new_style.action().anzeigetext))
     })
 }

@@ -1,3 +1,4 @@
+use crate::http_client::client;
 use serde::{Deserialize, Serialize};
 
 const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
@@ -24,17 +25,10 @@ struct TagEntry {
     name: String,
 }
 
-/// True if a local Ollama instance answers, i.e. Iris can run fully offline.
-pub async fn is_available() -> bool {
-    reqwest::Client::new()
-        .get(format!("{OLLAMA_BASE_URL}/api/tags"))
-        .send()
-        .await
-        .is_ok()
-}
-
+/// Ok(_) genau dann, wenn ein lokales Ollama antwortet, i.e. Iris komplett
+/// offline laufen kann.
 pub async fn list_installed_models() -> Result<Vec<String>, String> {
-    let resp = reqwest::Client::new()
+    let resp = client()
         .get(format!("{OLLAMA_BASE_URL}/api/tags"))
         .send()
         .await
@@ -51,7 +45,7 @@ pub async fn generate(model: &str, prompt: &str) -> Result<String, String> {
         prompt,
         stream: false,
     };
-    let resp = reqwest::Client::new()
+    let resp = client()
         .post(format!("{OLLAMA_BASE_URL}/api/generate"))
         .json(&body)
         .send()

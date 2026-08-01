@@ -14,12 +14,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_http::cors::CorsLayer;
 
+use crate::command::{CommandResult, PermissionRequest};
 use crate::{hardware, mcp, message, ollama, permissions, postfach, registry};
 
 /// Muss mit `API_BASE` in src/main.ts übereinstimmen.
 pub const PORT: u16 = 47615;
-
-const MCP_PERMISSION_ID: &str = "mcp.server.verbinden";
 
 #[derive(Clone)]
 struct AppState {
@@ -29,30 +28,36 @@ struct AppState {
     mcp: mcp::SharedMcp,
 }
 
+/// Downstream-Dienst (Ollama, MCP-Server) nicht erreichbar oder fehlerhaft
+/// — derselbe Antwort-Shape an jeder Stelle, die einen davon aufruft.
+fn bad_gateway(e: impl std::fmt::Display) -> (StatusCode, String) {
+    (StatusCode::BAD_GATEWAY, e.to_string())
+}
+
 #[derive(Serialize)]
 struct StatusResponse {
     ram_gb: f64,
     tier: &'static str,
     recommended_model: &'static str,
     ollama_available: bool,
+    installed_models: Vec<String>,
 }
 
 async fn status_handler() -> Json<StatusResponse> {
     let recommendation = hardware::recommend_model();
-    let ollama_available = ollama::is_available().await;
+    let models_result = ollama::list_installed_models().await;
+    let ollama_available = models_result.is_ok();
     Json(StatusResponse {
         ram_gb: recommendation.ram_gb,
         tier: recommendation.tier,
         recommended_model: recommendation.model,
         ollama_available,
+        installed_models: models_result.unwrap_or_default(),
     })
 }
 
 async fn models_handler() -> Result<Json<Vec<String>>, (StatusCode, String)> {
-    ollama::list_installed_models()
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e))
+    ollama::list_installed_models().await.map(Json).map_err(bad_gateway)
 }
 
 #[derive(Serialize)]
@@ -106,7 +111,7 @@ async fn grant_handler(
 
     let mut tools = None;
     let mut connect_error = None;
-    if granted.id == MCP_PERMISSION_ID {
+    if granted.id == permissions::MCP_SERVER_VERBINDEN {
         if let Some(url) = &granted.scope {
             match mcp::connect(&state.mcp, url).await {
                 Ok(t) => tools = Some(t.into_iter().map(|tool| tool.name).collect()),
@@ -150,7 +155,7 @@ async fn mcp_tool_call_handler(
     mcp::call_tool(&state.mcp, &req.url, &req.tool, req.arguments)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e))
+        .map_err(bad_gateway)
 }
 
 #[derive(Serialize)]
@@ -188,9 +193,7 @@ async fn nachrichten_handler(
 
     for (chat, nachrichten) in gruppen {
         let prompt = message::zusammenfassen_prompt(&chat, &nachrichten);
-        let zusammenfassung = ollama::generate(&req.model, &prompt)
-            .await
-            .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
+        let zusammenfassung = ollama::generate(&req.model, &prompt).await.map_err(bad_gateway)?;
         postfach::ablegen(&state.postfach, chat.clone(), zusammenfassung);
         zusammengefasste_chats.push(chat);
     }
@@ -200,17 +203,54 @@ async fn nachrichten_handler(
     }))
 }
 
+/// "/help": zeigt, was möglich ist und was erteilt/verbunden ist —
+/// erzeugt aus den Registries, nicht aus dem Modellgedächtnis (docs/PLAN.md,
+/// Abschnitt 2). Läuft über denselben `/api/ask`-Weg wie jeder andere
+/// Befehl, damit es später auch über einen Messenger-Kanal (M4) funktioniert.
+fn help_command(state: &AppState, prompt: &str) -> Option<CommandResult> {
+    if prompt.trim().to_lowercase() != "/help" {
+        return None;
+    }
+
+    let active: std::collections::HashSet<String> = permissions::list_active(&state.permissions)
+        .into_iter()
+        .map(|g| g.id)
+        .collect();
+    let servers = mcp::list_servers(&state.mcp);
+
+    let mut zeilen = vec!["Was Iris gerade kann (aus der Registry, nicht vom Modell erfunden):".to_string(), String::new()];
+    zeilen.extend(registry::REGISTRY.iter().map(|a| {
+        format!("- {}{}", a.anzeigetext, if a.reversible { " (rückgängig machbar)" } else { "" })
+    }));
+    zeilen.push(String::new());
+    zeilen.push("Berechtigungen:".to_string());
+    zeilen.extend(permissions::PERMISSIONS.iter().map(|p| {
+        format!("- [{}] {}", if active.contains(p.id) { "erteilt" } else { "nicht erteilt" }, p.anzeigetext)
+    }));
+    zeilen.push(String::new());
+    zeilen.push("Verbundene MCP-Server:".to_string());
+    if servers.is_empty() {
+        zeilen.push("- keine".to_string());
+    } else {
+        zeilen.extend(servers.iter().map(|s| {
+            let namen: Vec<&str> = s.tools.iter().map(|t| t.name.as_str()).collect();
+            format!("- {}: {}", s.url, if namen.is_empty() { "keine Werkzeuge".to_string() } else { namen.join(", ") })
+        }));
+    }
+    zeilen.push(String::new());
+    zeilen.push(
+        "Sag Iris einfach, was du willst — z. B. \"antworte ab jetzt kurz\", \"mach das rückgängig\", \
+         \"verbinde mein WhatsApp\" oder \"verbinde mich mit https://beispiel.de/mcp\"."
+            .to_string(),
+    );
+
+    Some(CommandResult::message(zeilen.join("\n")))
+}
+
 #[derive(Deserialize)]
 struct AskRequest {
     model: String,
     prompt: String,
-}
-
-#[derive(Serialize)]
-struct PermissionRequest {
-    id: String,
-    anzeigetext: String,
-    scope: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -226,78 +266,34 @@ struct AskResponse {
     permission_request: Option<PermissionRequest>,
 }
 
+impl From<CommandResult> for AskResponse {
+    fn from(result: CommandResult) -> Self {
+        AskResponse {
+            response: result.message,
+            command_handled: true,
+            permission_request: result.permission_request,
+        }
+    }
+}
+
 async fn ask_handler(
     State(state): State<AppState>,
     JsonExtract(req): JsonExtract<AskRequest>,
 ) -> Result<Json<AskResponse>, (StatusCode, String)> {
-    if let Some(notice) = registry::handle_command(&state.verbosity, &req.prompt) {
-        return Ok(Json(AskResponse {
-            response: notice,
-            command_handled: true,
-            permission_request: None,
-        }));
+    if let Some(result) = help_command(&state, &req.prompt) {
+        return Ok(Json(result.into()));
     }
-
+    if let Some(result) = registry::handle_command(&state.verbosity, &req.prompt) {
+        return Ok(Json(result.into()));
+    }
     if let Some(result) = permissions::handle_command(&state.permissions, &req.prompt) {
-        return Ok(Json(AskResponse {
-            response: result.message,
-            command_handled: true,
-            permission_request: result.permission_request.map(|req| PermissionRequest {
-                id: req.id.to_string(),
-                anzeigetext: req.anzeigetext.to_string(),
-                scope: req.scope,
-            }),
-        }));
+        return Ok(Json(result.into()));
     }
-
-    if let Some(url) = mcp::find_server_url(&req.prompt) {
-        let lower = req.prompt.to_lowercase();
-        if lower.contains("verbind") || lower.contains("mcp") || lower.contains("nutz") {
-            if permissions::is_granted(&state.permissions, MCP_PERMISSION_ID, Some(&url)) {
-                let message = match mcp::list_servers(&state.mcp)
-                    .into_iter()
-                    .find(|s| s.url == url)
-                {
-                    Some(server) => {
-                        let names: Vec<&str> =
-                            server.tools.iter().map(|t| t.name.as_str()).collect();
-                        format!("Bereits verbunden mit {url}. Werkzeuge: {}", names.join(", "))
-                    }
-                    None => match mcp::connect(&state.mcp, &url).await {
-                        Ok(tools) => {
-                            let names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
-                            format!("Verbunden mit {url}. Werkzeuge: {}", names.join(", "))
-                        }
-                        Err(e) => format!("Verbindung zu {url} fehlgeschlagen: {e}"),
-                    },
-                };
-                return Ok(Json(AskResponse {
-                    response: message,
-                    command_handled: true,
-                    permission_request: None,
-                }));
-            }
-
-            let def = permissions::def_for(MCP_PERMISSION_ID)
-                .expect("mcp.server.verbinden muss in PERMISSIONS stehen");
-            return Ok(Json(AskResponse {
-                response: format!("[BERECHTIGUNG ANGEFRAGT]\n{}\nServer: {url}", def.anzeigetext),
-                command_handled: true,
-                permission_request: Some(PermissionRequest {
-                    id: def.id.to_string(),
-                    anzeigetext: def.anzeigetext.to_string(),
-                    scope: Some(url),
-                }),
-            }));
-        }
+    if let Some(result) = mcp::handle_command(&state.mcp, &state.permissions, &req.prompt).await {
+        return Ok(Json(result.into()));
     }
-
-    if let Some(antwort) = postfach::handle_command(&state.postfach, &req.prompt) {
-        return Ok(Json(AskResponse {
-            response: antwort,
-            command_handled: true,
-            permission_request: None,
-        }));
+    if let Some(result) = postfach::handle_command(&state.postfach, &req.prompt) {
+        return Ok(Json(result.into()));
     }
 
     let instruction = registry::current_instruction(&state.verbosity);
@@ -305,12 +301,14 @@ async fn ask_handler(
 
     ollama::generate(&req.model, &full_prompt)
         .await
-        .map(|response| Json(AskResponse {
-            response,
-            command_handled: false,
-            permission_request: None,
-        }))
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e))
+        .map(|response| {
+            Json(AskResponse {
+                response,
+                command_handled: false,
+                permission_request: None,
+            })
+        })
+        .map_err(bad_gateway)
 }
 
 fn router(state: AppState) -> Router {

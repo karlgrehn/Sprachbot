@@ -5,6 +5,7 @@
 //! Metadata). Der Redirect läuft über einen kurzlebigen lokalen
 //! HTTP-Listener, kein Custom-URL-Scheme.
 
+use crate::http_client::client;
 use axum::{extract::Query, routing::get, Router};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::RngCore;
@@ -67,8 +68,7 @@ pub async fn discover(www_authenticate: &str) -> Result<AuthEndpoints, String> {
     let resource_metadata_url = extract_resource_metadata_url(www_authenticate)
         .ok_or_else(|| "WWW-Authenticate ohne resource_metadata".to_string())?;
 
-    let client = reqwest::Client::new();
-    let resource_meta: ProtectedResourceMetadata = client
+    let resource_meta: ProtectedResourceMetadata = client()
         .get(&resource_metadata_url)
         .send()
         .await
@@ -82,7 +82,7 @@ pub async fn discover(www_authenticate: &str) -> Result<AuthEndpoints, String> {
         .first()
         .ok_or_else(|| "Keine Autorisierungsserver in den Resource-Metadaten".to_string())?;
 
-    let as_meta: AuthServerMetadata = client
+    let as_meta: AuthServerMetadata = client()
         .get(format!("{as_url}/.well-known/oauth-authorization-server"))
         .send()
         .await
@@ -182,7 +182,7 @@ pub async fn exchange_code(
         ("redirect_uri", redirect_uri),
         ("client_id", "iris"),
     ];
-    let resp = reqwest::Client::new()
+    let resp = client()
         .post(token_endpoint)
         .form(&params)
         .send()

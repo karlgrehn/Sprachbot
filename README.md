@@ -24,8 +24,10 @@ Anzeigetexte im Code, nie vom Modell erzeugt. Der Nutzer beschreibt in freier
 Sprache, was er will (z. B. „antworte ab jetzt kurz"); ist die Änderung
 problemlos rückgängig zu machen („grün"), setzt Iris sie ohne Rückfrage um.
 „Mach das rückgängig" nimmt sie zuverlässig zurück (echte Historie, kein
-Toggle-Hack). `/api/registry` ist die Datenquelle für `/help` — auch das
-kommt aus der Registry, nicht aus dem Modellgedächtnis.
+Toggle-Hack). `/help` läuft wie jeder andere Befehl über `/api/ask` (erkannt
+im Kern, nicht im Frontend — sonst würde es über einen Messenger-Kanal in
+M4 nicht funktionieren) und setzt sich aus Registry, Berechtigungen und
+verbundenen MCP-Servern zusammen, nie aus dem Modellgedächtnis.
 
 Berechtigungspflichtige („rote") Aktionen leben in `src-tauri/src/permissions.rs`
 — dieselbe Idee, aber dauerhaft und mit einem echten Button statt Sofort-

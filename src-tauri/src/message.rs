@@ -8,7 +8,6 @@
 //! POST /api/nachrichten auch von Hand oder zu Testzwecken befüllt werden.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -28,23 +27,14 @@ pub struct Nachricht {
 
 /// Gruppiert nach Chat, in der Reihenfolge des ersten Auftretens.
 pub fn gruppiere_nach_chat(nachrichten: &[Nachricht]) -> Vec<(String, Vec<Nachricht>)> {
-    let mut reihenfolge: Vec<String> = Vec::new();
-    let mut map: HashMap<String, Vec<Nachricht>> = HashMap::new();
-
+    let mut gruppen: Vec<(String, Vec<Nachricht>)> = Vec::new();
     for n in nachrichten {
-        if !map.contains_key(&n.chat) {
-            reihenfolge.push(n.chat.clone());
+        match gruppen.iter_mut().find(|(chat, _)| *chat == n.chat) {
+            Some((_, liste)) => liste.push(n.clone()),
+            None => gruppen.push((n.chat.clone(), vec![n.clone()])),
         }
-        map.entry(n.chat.clone()).or_default().push(n.clone());
     }
-
-    reihenfolge
-        .into_iter()
-        .map(|chat| {
-            let liste = map.remove(&chat).unwrap();
-            (chat, liste)
-        })
-        .collect()
+    gruppen
 }
 
 /// Baut den Zusammenfassungs-Prompt für einen Chat. Fremde Nachrichten

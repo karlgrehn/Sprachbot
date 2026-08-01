@@ -4,7 +4,9 @@
 //! *Fertig, wenn ein fremder MCP-Server ohne Codeänderung eingebunden und
 //! benutzt werden kann* (docs/PLAN.md, M3).
 
-use crate::oauth;
+use crate::command::{CommandResult, PermissionRequest};
+use crate::http_client::client;
+use crate::{oauth, permissions};
 use reqwest::StatusCode;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -56,6 +58,16 @@ pub fn list_servers(state: &SharedMcp) -> Vec<McpServerInfo> {
         .collect()
 }
 
+/// Direkter Zugriff auf einen einzelnen verbundenen Server, ohne dafür die
+/// komplette Liste (inklusive aller Werkzeuge jedes anderen Servers) zu
+/// klonen.
+pub fn get_server(state: &SharedMcp, url: &str) -> Option<McpServerInfo> {
+    state.lock().unwrap().servers.get(url).map(|s| McpServerInfo {
+        url: url.to_string(),
+        tools: s.tools.clone(),
+    })
+}
+
 struct RpcResult {
     status: StatusCode,
     session_id: Option<String>,
@@ -64,7 +76,6 @@ struct RpcResult {
 }
 
 async fn rpc_call(
-    client: &reqwest::Client,
     url: &str,
     session_id: Option<&str>,
     access_token: Option<&str>,
@@ -77,7 +88,7 @@ async fn rpc_call(
         None => json!({ "jsonrpc": "2.0", "method": method, "params": params }),
     };
 
-    let mut req = client
+    let mut req = client()
         .post(url)
         .header("Accept", "application/json, text/event-stream")
         .json(&body);
@@ -149,30 +160,20 @@ fn parse_tools(body: &Value) -> Vec<McpTool> {
 /// gefundenen Werkzeuge unter dieser URL. Kein Modell beteiligt — der
 /// Nutzer hat die Berechtigung bereits erteilt, das ist reine Verdrahtung.
 pub async fn connect(state: &SharedMcp, url: &str) -> Result<Vec<McpTool>, String> {
-    let client = reqwest::Client::new();
     let init_params = json!({
         "protocolVersion": PROTOCOL_VERSION,
         "capabilities": {},
         "clientInfo": { "name": "Iris", "version": "0.1.0" }
     });
 
-    let first = rpc_call(&client, url, None, None, "initialize", init_params.clone(), Some(1)).await?;
+    let first = rpc_call(url, None, None, "initialize", init_params.clone(), Some(1)).await?;
 
     let (init, access_token) = if first.status == StatusCode::UNAUTHORIZED {
         let header = first.www_authenticate.clone().ok_or_else(|| {
             "401 ohne WWW-Authenticate — kann keine Autorisierung finden".to_string()
         })?;
         let token = oauth::authorize_and_get_token(&header).await?;
-        let retried = rpc_call(
-            &client,
-            url,
-            None,
-            Some(&token),
-            "initialize",
-            init_params,
-            Some(1),
-        )
-        .await?;
+        let retried = rpc_call(url, None, Some(&token), "initialize", init_params, Some(1)).await?;
         (retried, Some(token))
     } else {
         (first, None)
@@ -189,7 +190,6 @@ pub async fn connect(state: &SharedMcp, url: &str) -> Result<Vec<McpTool>, Strin
 
     // notifications/initialized: Notification ohne id, Server antwortet 202.
     rpc_call(
-        &client,
         url,
         session_id.as_deref(),
         access_token.as_deref(),
@@ -200,7 +200,6 @@ pub async fn connect(state: &SharedMcp, url: &str) -> Result<Vec<McpTool>, Strin
     .await?;
 
     let list = rpc_call(
-        &client,
         url,
         session_id.as_deref(),
         access_token.as_deref(),
@@ -241,9 +240,7 @@ pub async fn call_tool(
         (server.session_id.clone(), server.access_token.clone())
     };
 
-    let client = reqwest::Client::new();
     let result = rpc_call(
-        &client,
         url,
         session_id.as_deref(),
         access_token.as_deref(),
@@ -264,9 +261,52 @@ pub async fn call_tool(
 
 /// Erkennt eine Verbindungsabsicht mit einer http(s)-URL im freien
 /// Prompt-Text. `None`, wenn keine URL erkennbar ist.
-pub fn find_server_url(prompt: &str) -> Option<String> {
+fn find_server_url(prompt: &str) -> Option<String> {
     prompt
         .split_whitespace()
         .find(|w| w.starts_with("http://") || w.starts_with("https://"))
         .map(|w| w.trim_matches(|c: char| ".,;)]\"'".contains(c)).to_string())
+}
+
+/// Erkennt eine MCP-Verbindungsabsicht (URL + Stichwort) im freien
+/// Prompt-Text, prüft die Berechtigung und verbindet ggf. sofort. `None`,
+/// wenn der Text keine solche Absicht anfordert.
+pub async fn handle_command(
+    state: &SharedMcp,
+    permissions_state: &permissions::SharedPermissions,
+    prompt: &str,
+) -> Option<CommandResult> {
+    let url = find_server_url(prompt)?;
+    let lower = prompt.to_lowercase();
+    if !(lower.contains("verbind") || lower.contains("mcp") || lower.contains("nutz")) {
+        return None;
+    }
+
+    if !permissions::is_granted(permissions_state, permissions::MCP_SERVER_VERBINDEN, Some(&url)) {
+        let def = permissions::def_for(permissions::MCP_SERVER_VERBINDEN)
+            .expect("mcp.server.verbinden muss in PERMISSIONS stehen");
+        return Some(CommandResult {
+            message: format!("[BERECHTIGUNG ANGEFRAGT]\n{}\nServer: {url}", def.anzeigetext),
+            permission_request: Some(PermissionRequest {
+                id: def.id,
+                anzeigetext: def.anzeigetext,
+                scope: Some(url),
+            }),
+        });
+    }
+
+    let message = match get_server(state, &url) {
+        Some(server) => {
+            let names: Vec<&str> = server.tools.iter().map(|t| t.name.as_str()).collect();
+            format!("Bereits verbunden mit {url}. Werkzeuge: {}", names.join(", "))
+        }
+        None => match connect(state, &url).await {
+            Ok(tools) => {
+                let names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
+                format!("Verbunden mit {url}. Werkzeuge: {}", names.join(", "))
+            }
+            Err(e) => format!("Verbindung zu {url} fehlgeschlagen: {e}"),
+        },
+    };
+    Some(CommandResult::message(message))
 }

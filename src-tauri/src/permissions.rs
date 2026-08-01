@@ -11,9 +11,10 @@
 //! ohnehin noch keinen anderen Kanal). Der Chat-mit-sich-selbst-Kanal aus
 //! dem Plan kommt erst mit M4 hinzu.
 
+use crate::clock::now_unix;
+use crate::command::{CommandResult, PermissionRequest};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize, Clone, Copy)]
 pub struct PermissionDef {
@@ -21,13 +22,19 @@ pub struct PermissionDef {
     pub anzeigetext: &'static str,
 }
 
+/// IDs als Konstanten statt wiederholter String-Literale — jede Stelle, die
+/// eine Berechtigung anfragt oder prüft, referenziert dieselbe Konstante
+/// wie der Registry-Eintrag selbst.
+pub const WHATSAPP_KOPPELN: &str = "bridge.whatsapp.koppeln";
+pub const MCP_SERVER_VERBINDEN: &str = "mcp.server.verbinden";
+
 pub const PERMISSIONS: &[PermissionDef] = &[
     PermissionDef {
-        id: "bridge.whatsapp.koppeln",
+        id: WHATSAPP_KOPPELN,
         anzeigetext: "Iris darf mein WhatsApp-Konto koppeln, um Nachrichten zu lesen",
     },
     PermissionDef {
-        id: "mcp.server.verbinden",
+        id: MCP_SERVER_VERBINDEN,
         anzeigetext: "Iris darf sich mit diesem MCP-Server verbinden und dessen Werkzeuge benutzen",
     },
 ];
@@ -63,10 +70,7 @@ pub fn grant(
     let granted = GrantedPermission {
         id: def.id.to_string(),
         scope,
-        granted_at_unix: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
+        granted_at_unix: now_unix(),
     };
     let mut s = state.lock().unwrap();
     s.granted
@@ -96,22 +100,10 @@ pub fn list_active(state: &SharedPermissions) -> Vec<GrantedPermission> {
     state.lock().unwrap().granted.clone()
 }
 
-pub struct PermissionRequest {
-    pub id: &'static str,
-    pub anzeigetext: &'static str,
-    pub scope: Option<String>,
-}
-
-pub struct CommandResult {
-    pub message: String,
-    pub permission_request: Option<PermissionRequest>,
-}
-
 /// Erkennt eine WhatsApp-Kopplungsabsicht im freien Prompt-Text. `None`,
 /// wenn der Text keine solche Absicht anfordert. Die MCP-Erkennung lebt in
 /// mcp.rs, weil sie zusätzlich eine URL aus dem Text lesen muss.
 pub fn handle_command(state: &SharedPermissions, prompt: &str) -> Option<CommandResult> {
-    const WHATSAPP_ID: &str = "bridge.whatsapp.koppeln";
     let lower = prompt.to_lowercase();
     if !lower.contains("whatsapp") {
         return None;
@@ -119,15 +111,13 @@ pub fn handle_command(state: &SharedPermissions, prompt: &str) -> Option<Command
 
     let wants_revoke = lower.contains("widerruf") || lower.contains("trenn");
     if wants_revoke {
-        let revoked = revoke(state, WHATSAPP_ID, None);
-        return Some(CommandResult {
-            message: if revoked {
-                "WhatsApp-Berechtigung widerrufen.".to_string()
-            } else {
-                "WhatsApp war nicht verbunden.".to_string()
-            },
-            permission_request: None,
-        });
+        let revoked = revoke(state, WHATSAPP_KOPPELN, None);
+        let message = if revoked {
+            "WhatsApp-Berechtigung widerrufen.".to_string()
+        } else {
+            "WhatsApp war nicht verbunden.".to_string()
+        };
+        return Some(CommandResult::message(message));
     }
 
     let wants_connect =
@@ -136,16 +126,16 @@ pub fn handle_command(state: &SharedPermissions, prompt: &str) -> Option<Command
         return None;
     }
 
-    if is_granted(state, WHATSAPP_ID, None) {
-        return Some(CommandResult {
-            message: "WhatsApp-Kopplung ist bereits erlaubt. Die Bridge selbst ist in dieser \
-                      Version noch nicht angebunden (siehe docs/PLAN.md, M2)."
+    if is_granted(state, WHATSAPP_KOPPELN, None) {
+        return Some(CommandResult::message(
+            "WhatsApp-Kopplung ist bereits erlaubt. Die Bridge selbst ist in dieser Version \
+             noch nicht angebunden (siehe docs/PLAN.md, M2)."
                 .to_string(),
-            permission_request: None,
-        });
+        ));
     }
 
-    let def = def_for(WHATSAPP_ID).expect("bridge.whatsapp.koppeln muss in PERMISSIONS stehen");
+    let def =
+        def_for(WHATSAPP_KOPPELN).expect("bridge.whatsapp.koppeln muss in PERMISSIONS stehen");
     Some(CommandResult {
         message: format!("[BERECHTIGUNG ANGEFRAGT]\n{}", def.anzeigetext),
         permission_request: Some(PermissionRequest {

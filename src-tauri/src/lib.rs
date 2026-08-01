@@ -1,5 +1,8 @@
 mod api;
+mod clock;
+mod command;
 mod hardware;
+mod http_client;
 mod mcp;
 mod message;
 mod oauth;
