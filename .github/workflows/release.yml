@@ -90,23 +90,34 @@ jobs:
           case "${{ matrix.platform }}" in
             windows-latest)
               TARGET=x86_64-pc-windows-msvc
+              # .zip (nicht .tgz/.tar.zst) fuer Windows.
               ASSET=ollama-windows-amd64.zip
               SIDECAR=ollama-${TARGET}.exe
               ;;
             ubuntu-22.04)
               TARGET=x86_64-unknown-linux-gnu
-              ASSET=ollama-linux-amd64.tgz
+              # Ollama liefert Linux-Releases als .tar.zst aus (nicht mehr
+              # .tgz/.tar.gz wie in frueheren Versionen) - per echtem
+              # HTTP-Check bestaetigt, nachdem ein CI-Lauf mit dem alten
+              # Dateinamen an "gzip: stdin: not in gzip format" scheiterte.
+              ASSET=ollama-linux-amd64.tar.zst
               SIDECAR=ollama-${TARGET}
               ;;
           esac
 
           mkdir -p src-tauri/binaries ollama-runtime bundled-model
-          curl -sSL "https://github.com/ollama/ollama/releases/latest/download/${ASSET}" -o ollama-dl
+          # -f: bei einem 404 (z. B. erneuter Namenswechsel) soll curl hier
+          # laut fehlschlagen, statt eine HTML-Fehlerseite stillschweigend
+          # als "ollama-dl" abzulegen und erst beim Entpacken zu scheitern.
+          curl -fsSL "https://github.com/ollama/ollama/releases/latest/download/${ASSET}" -o ollama-dl
 
           if [[ "$ASSET" == *.zip ]]; then
-            tar xf ollama-dl -C ollama-runtime
+            # Git-Bash-eigenes "tar" auf windows-latest kann dieses .zip
+            # nicht zuverlaessig lesen ("This does not look like a tar
+            # archive") - 7-Zip ist auf GitHub-Windows-Runnern vorinstalliert.
+            7z x -y -oollama-runtime ollama-dl >/dev/null
           else
-            tar xzf ollama-dl -C ollama-runtime
+            tar --zstd -xf ollama-dl -C ollama-runtime
           fi
 
           OLLAMA_BIN=$(find ollama-runtime -type f \( -iname "ollama.exe" -o -iname "ollama" \) | head -1)
