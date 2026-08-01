@@ -88,6 +88,24 @@
         border: 1px solid #ccc;
         font-size: 0.9em;
       }
+      .apple-card {
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        padding: 1.2em 1.5em;
+        background: #ffffff;
+        margin: 1.5em 0;
+        text-align: left;
+        font-size: 0.9em;
+      }
+      .apple-card ol {
+        margin: 0.5em 0 0;
+        padding-left: 1.2em;
+      }
+      .apk-warning {
+        font-size: 0.85em;
+        opacity: 0.75;
+        margin-top: 0.5em;
+      }
       .hinweis {
         font-size: 0.85em;
         opacity: 0.6;
@@ -105,7 +123,8 @@
         }
         .platform-tabs button,
         .download-card,
-        .pwa-hint {
+        .pwa-hint,
+        .apple-card {
           color: #ffffff;
           background-color: #0f0f0f98;
           border-color: #444;
@@ -130,21 +149,49 @@
       <div class="platform-tabs" role="tablist" aria-label="Plattform">
         <button type="button" data-platform="windows" aria-pressed="true">Windows</button>
         <button type="button" data-platform="linux" aria-pressed="false">Linux</button>
+        <button type="button" data-platform="android" aria-pressed="false">Android</button>
+        <button type="button" data-platform="apple" aria-pressed="false">iPhone/iPad</button>
       </div>
 
-      <div class="download-card">
-        <p>
+      <div class="download-card" data-panel="download">
+        <p data-desktop-text>
           Eine Datei, alles enthalten. Keine weitere Installation nötig.
         </p>
         <p class="size" data-size></p>
         <a class="button" data-download href="#">Herunterladen</a>
+        <p class="apk-warning" data-android-warning hidden>
+          Android zeigt beim Installieren eine Warnung („Unbekannte
+          Quelle" / „App nicht von Play Store"). Das ist normal — Iris
+          kommt bewusst nicht über den Play Store, sondern direkt von hier.
+          Einfach bestätigen.
+        </p>
+      </div>
+
+      <div class="apple-card" data-panel="apple" hidden>
+        <strong>Kein Download nötig</strong>
+        <p>
+          Apple erlaubt keinen direkten App-Download außerhalb des App
+          Store. Iris läuft auf iPhone/iPad stattdessen als Web-App —
+          genauso einfach, ganz ohne App Store:
+        </p>
+        <ol>
+          <li>Diese Seite in Safari öffnen (nicht Chrome — nur Safari kann
+            auf iOS Web-Apps installieren)</li>
+          <li>Teilen-Symbol tippen</li>
+          <li>„Zum Home-Bildschirm" wählen</li>
+        </ol>
+        <p>
+          Iris erscheint danach wie eine normale App auf dem Startbildschirm.
+        </p>
       </div>
 
       <div class="pwa-hint">
-        <strong>Android, iPhone oder ein weiterer Rechner?</strong>
-        Kein Download nötig — Iris läuft dort als Web-App, verbunden mit
-        dem Rechner, auf dem die Installation oben läuft. Einrichtung
-        (Tailscale) steht im Handbuch, das der Installation beiliegt.
+        <strong>Noch ein Rechner im selben Netzwerk?</strong>
+        Kein Download nötig — Iris läuft dort ebenfalls als Web-App,
+        verbunden mit dem Rechner, auf dem die Installation oben läuft.
+        Einrichtung (Tailscale) steht im Handbuch, das der Installation
+        beiliegt. Android kann wahlweise die App oben installieren oder
+        genauso als Web-App laufen.
       </div>
 
       <p class="hinweis">
@@ -168,12 +215,38 @@
       }
 
       let platform = "windows";
-      let manifests = {}; // { windows: {offline:{url,bytes}}, linux: {...} }
+      // windows/linux: {offline:{url,bytes}} — android: {apk:{url,bytes}}
+      // (eigene Form, weil es dort keine Normal/Offline-Unterscheidung gibt
+      // — Android ist immer ein Thin Client, siehe src-tauri/src/lib.rs).
+      let manifests = {};
+
+      function entryFor(key) {
+        if (key === "android") return manifests.android?.apk;
+        return manifests[key]?.offline;
+      }
 
       function render() {
+        const downloadPanel = document.querySelector('[data-panel="download"]');
+        const applePanel = document.querySelector('[data-panel="apple"]');
+        const androidWarning = document.querySelector("[data-android-warning]");
+
+        if (platform === "apple") {
+          downloadPanel.hidden = true;
+          applePanel.hidden = false;
+          return;
+        }
+        downloadPanel.hidden = false;
+        applePanel.hidden = true;
+        androidWarning.hidden = platform !== "android";
+
+        document.querySelector("[data-desktop-text]").textContent =
+          platform === "android"
+            ? "Eine APK-Datei, alles enthalten. Verbindet sich mit einem Iris-Rechner im selben Netzwerk (Adresse einmalig in der App eintragen)."
+            : "Eine Datei, alles enthalten. Keine weitere Installation nötig.";
+
         const link = document.querySelector("[data-download]");
         const sizeEl = document.querySelector("[data-size]");
-        const entry = manifests[platform]?.offline;
+        const entry = entryFor(platform);
         if (entry) {
           link.href = entry.url;
           link.removeAttribute("aria-disabled");
@@ -202,13 +275,14 @@
       render();
 
       // Manifeste laden, die der Release-Workflow bei jedem Build ablegt
-      // (iris/manifest-windows.json, iris/manifest-linux.json) — keine
-      // fest verdrahteten Dateinamen/Versionsnummern hier im Frontend.
-      // Enthalten weiterhin "normal" und "offline"; die Seite zeigt hier
+      // (iris/manifest-windows.json, iris/manifest-linux.json,
+      // iris/manifest-android.json) — keine fest verdrahteten
+      // Dateinamen/Versionsnummern hier im Frontend. windows/linux
+      // enthalten weiterhin "normal" und "offline"; die Seite zeigt hier
       // bewusst nur "offline" (fertig eingerichtet, keine Entscheidung
       // durch die Nutzer:innen nötig).
       if (DOWNLOAD_BASE) {
-        for (const key of ["windows", "linux"]) {
+        for (const key of ["windows", "linux", "android"]) {
           fetch(`${DOWNLOAD_BASE}/iris/manifest-${key}.json`)
             .then((r) => (r.ok ? r.json() : null))
             .then((data) => {
