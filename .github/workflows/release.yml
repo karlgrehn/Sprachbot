@@ -325,7 +325,10 @@ jobs:
       - name: Benötigte Android-SDK/NDK-Version installieren
         run: |
           set -euo pipefail
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 2 -name sdkmanager 2>/dev/null | head -1)
+          # cmdline-tools/latest/bin/sdkmanager ist 3 Ebenen tief, nicht 2 -
+          # der erste Versuch fand sdkmanager deshalb trotz vorhandenem
+          # cmdline-tools/latest-Verzeichnis nicht (echtes CI-Log bestaetigt).
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name sdkmanager 2>/dev/null | head -1)
           if [ -z "$SDKMANAGER" ]; then
             echo "Kein sdkmanager unter $ANDROID_HOME/cmdline-tools gefunden. Inhalt von \$ANDROID_HOME:"
             find "$ANDROID_HOME" -maxdepth 2
