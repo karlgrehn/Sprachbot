@@ -259,3 +259,141 @@ jobs:
 
           aws s3 cp manifest.json "s3://$S3_BUCKET/iris/manifest-${PLATFORM_KEY}.json" \
             "${ENDPOINT_ARG[@]}" --content-type application/json
+
+  # --- Android: direkter APK-Download, keine Play-Store-Einreichung ---
+  # (bewusste Entscheidung, siehe README "Android-APK" - Play Store und erst
+  # recht Apple App Store haben eigene, hier nicht gewählte Huerden).
+  #
+  # Android ist ein reiner Thin Client (kein Ollama/MCP/Kern auf dem Handy,
+  # siehe src-tauri/src/lib.rs "#[cfg(desktop)]") - die App verbindet sich
+  # über eine einmalig eingetragene Serveradresse (src/main.ts) mit einem
+  # per Tailscale erreichbaren Iris-Rechner.
+  #
+  # Das APK wird mit einem bei jedem Build neu erzeugten, selbstsignierten
+  # Schlüssel signiert (kein Play-Store-Vertrieb geplant) - Details siehe
+  # README "Android-APK: bekannte Einschränkungen". Nutzer:innen sehen beim
+  # Installieren eine "Unbekannte Quelle/Entwickler"-Warnung; das ist
+  # erwartet und Android selbst, nicht behebbar ohne Play-Store-Eintrag.
+  release-android:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      NDK_HOME: /usr/local/lib/android/sdk/ndk/29.0.13846066
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK installieren
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Frontend-Abhängigkeiten installieren
+        run: npm install
+
+      - name: Release-Tag bestimmen
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=iris-build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      # Bootstrapped bei Bedarf selbst NDK/Platform 36 (siehe
+      # tauri-cli-Quellcode: NDK_VERSION/SDK_VERSION-Konstanten in
+      # crates/tauri-cli/src/mobile/android/mod.rs) - falls die auf dem
+      # Runner vorinstallierte SDK-Version nicht reicht.
+      - name: Android-Projekt initialisieren (gen/android)
+        run: npm run tauri android init -- --ci
+
+      # Kein Play-Store-Vertrieb (siehe oben) - deshalb genügt ein bei jedem
+      # Build frisch erzeugter, selbstsignierter Schlüssel statt eines über
+      # Repo-Secrets verwalteten, dauerhaften Signing-Keys. Einschränkung:
+      # ein Update über eine ältere Installation hinweg ist damit (noch)
+      # nicht möglich, da sich der Signaturschlüssel jedes Mal ändert -
+      # Nutzer:innen müssten die App deinstallieren und neu installieren.
+      - name: Signing-Key erzeugen
+        run: |
+          set -euo pipefail
+          PASSWORD=$(openssl rand -hex 16)
+          KEYSTORE="$RUNNER_TEMP/iris-release.jks"
+          keytool -genkeypair -v -keystore "$KEYSTORE" \
+            -keyalg RSA -keysize 2048 -validity 10000 -alias iris \
+            -storepass "$PASSWORD" -keypass "$PASSWORD" \
+            -dname "CN=Iris, OU=Iris, O=Iris, L=Internet, S=Internet, C=DE"
+
+          mkdir -p src-tauri/gen/android
+          cat > src-tauri/gen/android/keystore.properties <<EOF
+          password=$PASSWORD
+          keyAlias=iris
+          storeFile=$KEYSTORE
+          EOF
+
+      - name: Gradle-Signing-Konfiguration einfügen
+        run: python3 .github/scripts/patch_android_signing.py src-tauri/gen/android/app/build.gradle.kts
+
+      # Nur aarch64 (arm64-v8a): deckt praktisch alle Android-Geräte der
+      # letzten Jahre ab - ein einziges APK statt einer Auswahl passend zum
+      # "ein Klick, dann ist die App da"-Ziel auf der Landingpage.
+      - name: APK bauen
+        run: npm run tauri android build -- --apk --target aarch64 --ci
+
+      - name: Gebautes APK finden
+        id: apk
+        run: |
+          set -euo pipefail
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -iname "*.apk" -path "*release*" | head -1)
+          if [ -z "$APK" ]; then
+            echo "Kein APK gefunden - Verzeichnisstruktur:"
+            find src-tauri/gen/android/app/build/outputs -maxdepth 4 || true
+            exit 1
+          fi
+          echo "APK gefunden: $APK ($(stat -c%s "$APK") Bytes)"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Nach S3-kompatiblem Speicher hochladen
+        if: env.S3_BUCKET != ''
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_PUBLIC_BASE_URL: ${{ secrets.S3_PUBLIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          ENDPOINT_ARG=()
+          if [ -n "${S3_ENDPOINT:-}" ]; then
+            ENDPOINT_ARG=(--endpoint-url "$S3_ENDPOINT")
+          fi
+
+          TAG="${{ steps.tag.outputs.name }}"
+          APK_KEY="iris/${TAG}/android/Iris.apk"
+
+          aws s3 cp "${{ steps.apk.outputs.path }}" "s3://$S3_BUCKET/$APK_KEY" "${ENDPOINT_ARG[@]}"
+          APK_SIZE=$(stat -c%s "${{ steps.apk.outputs.path }}")
+
+          cat > manifest.json <<EOF
+          {
+            "platform": "android",
+            "tag": "${TAG}",
+            "apk": { "url": "${S3_PUBLIC_BASE_URL}/${APK_KEY}", "bytes": ${APK_SIZE} }
+          }
+          EOF
+          cat manifest.json
+
+          aws s3 cp manifest.json "s3://$S3_BUCKET/iris/manifest-android.json" \
+            "${ENDPOINT_ARG[@]}" --content-type application/json

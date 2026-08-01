@@ -24,21 +24,27 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init());
 
     builder
-        .setup(|app| {
-            // Gebündelt (Release-Build): "dist" liegt im Resource-Verzeichnis
-            // (siehe tauri.conf.json "bundle.resources"). Im Entwicklungsbetrieb
-            // gibt es das noch nicht zwangsläufig — dann greift der relative
-            // Pfad, sobald einmal `npm run build` gelaufen ist.
-            use tauri::Manager;
-            let dist_dir = app
-                .path()
-                .resolve("dist", tauri::path::BaseDirectory::Resource)
-                .unwrap_or_else(|_| std::path::PathBuf::from("../dist"));
+        .setup(|_app| {
+            // Nur Desktop startet den eigenen Kern (Fat Client, siehe
+            // docs/PLAN.md): Android/iOS sind bewusst reine Thin Clients ohne
+            // eigenen lokalen Server — sie verbinden sich stattdessen über
+            // die in main.ts gemerkte Serveradresse mit einem entfernten
+            // Iris-Rechner. Ein lokaler Kern auf dem Handy wäre nicht nur
+            // unnötig, sondern auch funktionslos ohne Ollama/MCP dort.
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                let dist_dir = _app
+                    .path()
+                    .resolve("dist", tauri::path::BaseDirectory::Resource)
+                    .unwrap_or_else(|_| std::path::PathBuf::from("../dist"));
 
-            #[cfg(feature = "offline-bundle")]
-            ollama_sidecar::spawn(app.handle());
+                #[cfg(feature = "offline-bundle")]
+                ollama_sidecar::spawn(_app.handle());
 
-            tauri::async_runtime::spawn(api::serve(dist_dir));
+                tauri::async_runtime::spawn(api::serve(dist_dir));
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
