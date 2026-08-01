@@ -143,7 +143,14 @@ jobs:
             # Adressraum von NSIS' 32-Bit-makensis.exe ("Internal compiler
             # error #12345: error mmapping file ... is out of range") und
             # macht auch den Linux-Bundle-Schritt unnoetig groß/langsam.
-            rm -rf src-tauri/ollama-lib/cuda_v12 src-tauri/ollama-lib/cuda_v13 src-tauri/ollama-lib/vulkan
+            # Achtung Pfadtiefe: das Archiv liegt als lib/ollama/<backend>/...
+            # vor, "cp -r ollama-runtime/lib src-tauri/ollama-lib" erhaelt
+            # dieses eine Verschachtelungslevel ("ollama/") - der vorherige
+            # Versuch loeschte src-tauri/ollama-lib/vulkan (falscher, zu
+            # flacher Pfad), was durch "rm -rf" ohne Fehler still
+            # verpuffte, weil der Pfad gar nicht existierte. Per echtem
+            # Blick in die entpackte Struktur bestaetigt, nicht geraten.
+            rm -rf src-tauri/ollama-lib/ollama/cuda_v12 src-tauri/ollama-lib/ollama/cuda_v13 src-tauri/ollama-lib/ollama/vulkan
             du -sh src-tauri/ollama-lib || true
           else
             echo "Kein lib/-Verzeichnis im Ollama-Release gefunden — nichts zu bündeln."
