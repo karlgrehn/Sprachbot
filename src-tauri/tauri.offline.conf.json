@@ -8,6 +8,7 @@
   },
   "bundle": {
     "externalBin": ["binaries/ollama"],
+    "targets": ["nsis", "appimage"],
     "resources": {
       "../dist": "dist",
       "../bundled-model": "bundled-model",
