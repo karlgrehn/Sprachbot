@@ -202,6 +202,21 @@ Um sie auf Vercel zu deployen:
    — vorher bleibt der Download-Button bewusst deaktiviert
    („Noch kein Download eingerichtet").
 
+### Behobener Build-Fehler: `shell:allow-execute` in beiden Varianten
+
+Der erste echte CI-Lauf der Offline-Variante (Run #3) schlug auf **beiden**
+Plattformen schon beim normalen Build fehl: `Permission shell:allow-execute
+not found`. Ursache: Tauris Build-Skript validiert alle Dateien unter
+`capabilities/` gegen die Permissions der tatsächlich kompilierten Plugins —
+unabhängig davon, ob die jeweilige Capability-Datei über
+`security.capabilities` überhaupt aktiv ist. `tauri-plugin-shell` war als
+optionale Abhängigkeit hinter dem Feature `offline-bundle` versteckt; im
+normalen Build (ohne dieses Feature) kannte das Build-Skript die Permission
+aus `capabilities/offline.json` deshalb gar nicht. Behoben, indem
+`tauri-plugin-shell` eine normale (immer kompilierte) Abhängigkeit ist —
+nur die tatsächliche Sidecar-Ausführung (`ollama_sidecar::spawn`) bleibt
+hinter dem Feature.
+
 ### Offener Punkt bei der Offline-Variante
 
 Ollama sucht seine nativen Laufzeitbibliotheken relativ zur eigenen

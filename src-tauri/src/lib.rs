@@ -15,10 +15,13 @@ mod registry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
-
-    #[cfg(feature = "offline-bundle")]
-    let builder = builder.plugin(tauri_plugin_shell::init());
+    // tauri-plugin-shell wird immer initialisiert (siehe Cargo.toml-Kommentar
+    // zu offline-bundle): nur die normale Variante gewährt ihm nie die
+    // shell:allow-execute-Permission (capabilities/default.json enthält sie
+    // nicht), der Sidecar wird dort auch nie gestartet.
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init());
 
     builder
         .setup(|app| {
