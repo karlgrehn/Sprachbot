@@ -23,6 +23,19 @@ path = "src/bin/iris_hub.rs"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# Kein Geschwindigkeitsverlust, der hier zählt: der Kern macht HTTP-Routing/
+# JSON/Hardware-Erkennung, keine rechenintensiven Schleifen - die eigentliche
+# Modell-Inferenz läuft im separaten Ollama-Sidecar. opt-level "z" +
+# lto + codegen-units 1 + strip verkleinern das eigene Binary spürbar, ohne
+# Funktionalität zu ändern (reine Codegen-Einstellungen). panic="abort" ist
+# bewusst NICHT gesetzt - würde catch_unwind unmöglich machen, worauf Tauris
+# eigene Fehlerbehandlung sich verlassen könnte.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+
 [features]
 # Baut die Offline-Variante: bündelt Ollama + ein Modell als Sidecar, statt
 # eine separat installierte Ollama-Instanz vorauszusetzen (siehe
@@ -60,7 +73,11 @@ serde_json = "1"
 # Android-Sysroot. rustls ist reines Rust, kompiliert ohne C-Abhängigkeit
 # für jedes Zielsystem (Windows/Linux/Android gleichermaßen).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-sysinfo = "0.32"
+# Nur "system" (liefert total_memory()/refresh_memory(), siehe hardware.rs)
+# statt der Default-Features - component/disk/network/user/multithread
+# bringen ungenutzte Windows-COM/WMI-/Netzwerk-Bindings und einen ganzen
+# Rayon-Thread-Pool mit, die hier nie aufgerufen werden.
+sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors", "fs"] }
 tokio = { version = "1", features = ["net", "sync", "time", "rt", "rt-multi-thread"] }
