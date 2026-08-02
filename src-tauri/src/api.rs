@@ -63,6 +63,54 @@ async fn models_handler() -> Result<Json<Vec<String>>, (StatusCode, String)> {
 }
 
 #[derive(Serialize)]
+struct PairingResponse {
+    available: bool,
+    address: Option<String>,
+}
+
+/// Rein informativ, keine Berechtigung nötig: verrät nur die eigene, im
+/// Tailnet ohnehin öffentliche Adresse dieses Rechners (siehe README "Hub
+/// verbinden") — ermöglicht der Oberfläche, einen QR-Code fürs Handy
+/// anzuzeigen, statt die Adresse von Hand abtippen zu müssen. Scheitert
+/// `tailscale` (nicht installiert, nicht angemeldet, kein DNSName), liefert
+/// das schlicht `available: false` statt abzustürzen.
+fn detect_tailscale_address() -> PairingResponse {
+    let unavailable = PairingResponse {
+        available: false,
+        address: None,
+    };
+    let Ok(output) = std::process::Command::new("tailscale")
+        .args(["status", "--json"])
+        .output()
+    else {
+        return unavailable;
+    };
+    if !output.status.success() {
+        return unavailable;
+    }
+    let Ok(json) = serde_json::from_slice::<Value>(&output.stdout) else {
+        return unavailable;
+    };
+    let dns_name = json
+        .get("Self")
+        .and_then(|s| s.get("DNSName"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim_end_matches('.'))
+        .filter(|s| !s.is_empty());
+    match dns_name {
+        Some(name) => PairingResponse {
+            available: true,
+            address: Some(format!("https://{name}")),
+        },
+        None => unavailable,
+    }
+}
+
+async fn pairing_handler() -> Json<PairingResponse> {
+    Json(detect_tailscale_address())
+}
+
+#[derive(Serialize)]
 struct RegistryResponse {
     actions: &'static [registry::Action],
 }
@@ -326,6 +374,7 @@ fn router(state: AppState, dist_dir: PathBuf) -> Router {
     Router::new()
         .route("/api/status", get(status_handler))
         .route("/api/models", get(models_handler))
+        .route("/api/pairing", get(pairing_handler))
         .route("/api/registry", get(registry_handler))
         .route("/api/permissions", get(permissions_handler))
         .route("/api/permissions/grant", post(grant_handler))

@@ -313,22 +313,40 @@ Kein eigener Server nötig — der Kern liefert die Oberfläche selbst mit
 (siehe Status oben). Auf dem Worker-Laptop, auf dem Iris bereits läuft:
 
 1. [Tailscale](https://tailscale.com/) installieren und anmelden (auf dem
-   Laptop und auf dem Handy/Zweitgerät, im selben Tailnet).
+   Laptop und auf dem Handy/Zweitgerät, **mit demselben Tailscale-Konto**
+   — das ist der eigentliche "Verbinden per Account"-Schritt, siehe unten).
 2. Auf dem Laptop, während Iris läuft:
    ```bash
    tailscale serve --bg 47615
    ```
    Das reicht `127.0.0.1:47615` verschlüsselt über das Tailnet durch —
    Iris selbst muss dafür an keiner zusätzlichen Netzwerkschnittstelle
-   lauschen. `tailscale serve status` zeigt die resultierende Adresse
-   (etwas wie `https://<laptopname>.<tailnet>.ts.net`).
-3. Auf dem Handy: diese Adresse im Browser öffnen, dann
-   „Zum Home-Bildschirm hinzufügen" (iOS Safari) bzw. den
-   Installieren-Hinweis von Chrome (Android) bestätigen.
+   lauschen.
+3. Im Iris-Fenster erscheint jetzt automatisch ein QR-Code ("Handy
+   verbinden") — mit der Handykamera scannen öffnet die Adresse direkt.
+   Kein Abtippen nötig. (Fällt aus, wenn `tailscale` nicht gefunden oder
+   nicht angemeldet ist — dann zeigt `tailscale serve status` dieselbe
+   Adresse zum manuellen Eintragen.)
 4. Auf einem weiteren Laptop/Desktop genügt der normale
    Install-Button in der Adressleiste (Chrome/Edge) — das ist zugleich
    die "Installationsversion" für Rechner, auf denen die native App
    nicht installiert werden soll.
+
+### Warum kein automatischer "Login mit Tailscale" ohne QR-Code
+
+Wurde geprüft und bewusst nicht gebaut: Tailscales Android-App stellt
+anderen Apps (noch) keine LocalAPI/Status-Abfrage zur Verfügung (offenes
+Feature-Request [tailscale/tailscale#11683](https://github.com/tailscale/tailscale/issues/11683),
+nicht implementiert). Die einzige Alternative wäre ein Tailscale-OAuth-Client
+([tailscale.com/docs/features/oauth-clients](https://tailscale.com/docs/features/oauth-clients))
+— das ist aber ein tailnet-weites Zugriffstoken, keine Nutzer-Anmeldung.
+Es in die verteilte APK einzubetten würde bedeuten: wer das Token aus der
+APK extrahiert (trivial), bekäme Lese-/Schreibzugriff auf das gesamte
+Tailscale-Netzwerk, nicht nur auf Iris — ein echtes Sicherheitsrisiko, kein
+theoretisches. Der QR-Code (`src/qrcodegen.ts`, `api.rs::detect_tailscale_address`)
+löst dasselbe Problem (keine Adresse von Hand abtippen) ohne dieses Risiko:
+er kodiert nur die ohnehin öffentliche Tailnet-Adresse, die Sicherheitsgrenze
+bleibt Tailscales eigene Geräte-ACL.
 
 **Ohne eigene Authentifizierung:** Wer die Tailnet-Adresse erreicht, kann
 den Kern benutzen — Tailscales eigene Geräte-ACLs sind die Sicherheitsgrenze,

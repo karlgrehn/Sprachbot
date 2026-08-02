@@ -111,6 +111,43 @@ button:hover:not(:disabled) {
   margin-top: 0.8em;
 }
 
+.pairing-panel {
+  margin-top: 1.5em;
+  padding: 1em;
+  border-radius: 8px;
+  background-color: #ffffff;
+  border: 1px solid #ccc;
+  text-align: center;
+}
+
+.pairing-panel p {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.pairing-qr {
+  display: flex;
+  justify-content: center;
+  margin: 0.8em 0;
+}
+
+.pairing-qr svg {
+  width: 180px;
+  height: 180px;
+}
+
+.pairing-address-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+  flex-wrap: wrap;
+}
+
+.pairing-address-row code {
+  word-break: break-all;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;

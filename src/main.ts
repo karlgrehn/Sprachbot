@@ -14,6 +14,8 @@
 // Iris-Rechner verrät — dafür merkt sich Iris einmalig eine manuell
 // eingetragene Adresse (siehe requestServerAddress unten), statt dafür ein
 // Einstellungsmenü zu brauchen: dasselbe eine Textfeld wie für jeden Prompt.
+import { qrcodegen } from "./qrcodegen";
+
 const SERVER_ADDRESS_KEY = "iris-server-address";
 
 function computeDefaultApiBase(): string {
@@ -156,6 +158,48 @@ function showPermissionButton(request: PermissionRequest) {
   outputActionsEl.appendChild(button);
 }
 
+interface PairingResponse {
+  available: boolean;
+  address: string | null;
+}
+
+// Zeichnet den QR-Code als SVG-Pfad (ein "M...h1v1h-1z" pro dunklem Modul,
+// zusammengefasst in einem einzigen <path>). Kein Canvas nötig, skaliert
+// verlustfrei per CSS.
+function qrToSvg(qr: qrcodegen.QrCode, border: number): string {
+  const parts: string[] = [];
+  for (let y = 0; y < qr.size; y++) {
+    for (let x = 0; x < qr.size; x++) {
+      if (qr.getModule(x, y)) parts.push(`M${x + border},${y + border}h1v1h-1z`);
+    }
+  }
+  const dim = qr.size + border * 2;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${dim} ${dim}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#ffffff"/><path d="${parts.join(" ")}" fill="#000000"/></svg>`;
+}
+
+// Zeigt einen QR-Code mit der eigenen Tailscale-Adresse, damit sich ein
+// Handy verbinden kann, ohne die Adresse von Hand abzutippen (siehe
+// api.rs::detect_tailscale_address). Rein informativ, kein Einstellungsmenü
+// — blendet sich einfach aus, wenn tailscale nicht installiert/angemeldet ist.
+async function showPairingIfAvailable() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/pairing`);
+    if (!resp.ok) return;
+    const data: PairingResponse = await resp.json();
+    const panel = el<HTMLElement>("pairing-panel");
+    if (!data.available || !data.address) {
+      panel.hidden = true;
+      return;
+    }
+    const qr = qrcodegen.QrCode.encodeText(data.address, qrcodegen.QrCode.Ecc.MEDIUM);
+    el<HTMLElement>("pairing-qr").innerHTML = qrToSvg(qr, 2);
+    el<HTMLElement>("pairing-address").textContent = data.address;
+    panel.hidden = false;
+  } catch {
+    // Kein Absturz, falls /api/pairing (noch) nicht erreichbar ist.
+  }
+}
+
 function populateModelSelect(installed: string[], recommended: string) {
   modelSelect.innerHTML = "";
 
@@ -230,6 +274,8 @@ async function init() {
   const statusResp = await fetchWithRetry("/api/status");
   const status: StatusResponse = await statusResp.json();
 
+  showPairingIfAvailable();
+
   // Der Button bleibt in jedem Fall bedienbar: Registry-Aktionen,
   // Berechtigungen, Postfach und /help brauchen kein Ollama (siehe
   // api.rs::ask_handler — die werden vor dem Ollama-Fallback erkannt).
@@ -300,6 +346,15 @@ window.addEventListener("DOMContentLoaded", () => {
       configureAddress();
     } else {
       ask();
+    }
+  });
+
+  el<HTMLButtonElement>("pairing-copy").addEventListener("click", async () => {
+    const address = el<HTMLElement>("pairing-address").textContent ?? "";
+    try {
+      await navigator.clipboard.writeText(address);
+    } catch {
+      // Adresse steht ohnehin sichtbar da - manuell markieren geht immer.
     }
   });
 

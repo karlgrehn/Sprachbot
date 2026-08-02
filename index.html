@@ -42,6 +42,19 @@
         <pre id="output-text"></pre>
         <div id="output-actions"></div>
       </div>
+
+      <div id="pairing-panel" class="pairing-panel" hidden>
+        <strong>Handy verbinden</strong>
+        <p>
+          Tailscale-App auf dem Handy mit demselben Konto anmelden, dann
+          diesen Code mit der Kamera scannen:
+        </p>
+        <div id="pairing-qr" class="pairing-qr"></div>
+        <p class="pairing-address-row">
+          <code id="pairing-address"></code>
+          <button type="button" id="pairing-copy">Kopieren</button>
+        </p>
+      </div>
     </main>
   </body>
 </html>
