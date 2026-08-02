@@ -13,12 +13,16 @@ const ASSET_PATTERNS = {
 };
 
 function githubHeaders(token, accept) {
-  return {
-    Authorization: `Bearer ${token}`,
+  const headers = {
     Accept: accept || "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "iris-download-proxy",
   };
+  // Ohne Token (aktuell: Repo ist noch öffentlich) funktioniert die
+  // GitHub-API für Releases/Assets auch unauthentifiziert - Bearer
+  // undefined mitzuschicken würde die Anfrage nur unnötig ablehnen lassen.
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 async function fetchLatestRelease(token) {

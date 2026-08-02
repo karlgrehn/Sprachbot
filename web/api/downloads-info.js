@@ -6,12 +6,9 @@
 const { ASSET_PATTERNS, fetchLatestRelease, findAsset } = require("./_github");
 
 module.exports = async function handler(req, res) {
+  // Ohne Token funktioniert das ebenfalls, solange das Repo öffentlich ist
+  // (siehe _github.js) - kein hartes Erfordernis mehr.
   const token = process.env.GITHUB_DOWNLOAD_TOKEN;
-  if (!token) {
-    res.setHeader("Cache-Control", "no-store");
-    res.status(200).json({});
-    return;
-  }
 
   const release = await fetchLatestRelease(token);
   const result = {};

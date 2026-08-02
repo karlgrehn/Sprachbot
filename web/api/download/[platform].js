@@ -13,11 +13,11 @@ const { githubHeaders, fetchLatestRelease, findAsset } = require("../_github");
 module.exports = async function handler(req, res) {
   const platform = String(req.query.platform || "");
 
+  // GITHUB_DOWNLOAD_TOKEN ist nur nötig, sobald das Repo privat ist - so
+  // lange es öffentlich ist (aktueller Stand), funktioniert die GitHub-API
+  // auch unauthentifiziert. Kein hartes Erfordernis mehr, damit Downloads
+  // schon heute funktionieren, ohne dass ein Token angelegt sein muss.
   const token = process.env.GITHUB_DOWNLOAD_TOKEN;
-  if (!token) {
-    res.status(500).send("Download derzeit nicht verfügbar (Server nicht konfiguriert).");
-    return;
-  }
 
   const release = await fetchLatestRelease(token);
   if (!release) {
@@ -31,11 +31,20 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // Accept: application/octet-stream auf den Asset-API-Endpunkt liefert
-  // einen 302 auf eine signierte, unauthentifizierte CDN-URL — auch für
-  // private Repos, sobald der Redirect einmal mit gültigem Token geholt
-  // wurde. redirect: "manual", um diesen Redirect selbst zu bekommen statt
-  // ihm zu folgen.
+  res.setHeader("Cache-Control", "no-store");
+
+  if (!token) {
+    // Öffentliches Repo: die normale Download-URL ist bereits öffentlich
+    // erreichbar, kein Umweg über die authentifizierte Asset-API nötig.
+    res.redirect(302, asset.browser_download_url);
+    return;
+  }
+
+  // Privates Repo: Accept: application/octet-stream auf den Asset-API-
+  // Endpunkt liefert einen 302 auf eine signierte, unauthentifizierte
+  // CDN-URL — auch für private Repos, sobald der Redirect einmal mit
+  // gültigem Token geholt wurde. redirect: "manual", um diesen Redirect
+  // selbst zu bekommen statt ihm zu folgen.
   const assetResp = await fetch(asset.url, {
     headers: githubHeaders(token, "application/octet-stream"),
     redirect: "manual",
@@ -43,7 +52,6 @@ module.exports = async function handler(req, res) {
 
   const location = assetResp.headers.get("location");
   if (assetResp.status >= 300 && assetResp.status < 400 && location) {
-    res.setHeader("Cache-Control", "no-store");
     res.redirect(302, location);
     return;
   }
