@@ -20,22 +20,28 @@
   </head>
 
   <body>
-    <main class="container">
-      <h1>Iris</h1>
-      <p class="hint">Kein Menü, keine Einstellungen — beschreib, was du willst. <code>/help</code> zeigt, was Iris kann.</p>
+    <main class="page">
+      <header class="page-header">
+        <h1>Iris</h1>
+        <p class="hint">Kein Menü, keine Einstellungen — beschreib, was du willst. <code>/help</code> zeigt, was Iris kann.</p>
+      </header>
+
       <p id="status-line" class="status">Prüfe lokales Modell &hellip;</p>
 
-      <form id="prompt-form">
+      <form id="prompt-form" class="composer">
+        <select id="model-select" class="model-chip"></select>
         <textarea
           id="prompt-input"
-          rows="4"
+          rows="1"
           placeholder="Frag Iris etwas &hellip;"
           required
         ></textarea>
-        <div class="row">
-          <select id="model-select"></select>
-          <button type="submit" id="send-button">Senden</button>
-        </div>
+        <button type="submit" id="send-button" class="send-btn" aria-label="Senden">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"></line>
+            <polyline points="5 12 12 5 19 12"></polyline>
+          </svg>
+        </button>
       </form>
 
       <div id="output" aria-live="polite">

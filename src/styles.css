@@ -1,11 +1,11 @@
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
-  line-height: 24px;
+  line-height: 1.5;
   font-weight: 400;
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  color: #191919;
+  background-color: #ffffff;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -14,90 +14,153 @@
   -webkit-text-size-adjust: 100%;
 }
 
-.container {
-  max-width: 720px;
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.page {
+  max-width: 640px;
   margin: 0 auto;
-  padding: 6vh 1.5em;
+  padding: 12vh 1.5em 4em;
+}
+
+.page-header {
+  text-align: center;
+  margin-bottom: 2em;
 }
 
 h1 {
-  text-align: center;
+  margin: 0 0 0.3em;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .hint {
-  text-align: center;
+  margin: 0;
   font-size: 0.9em;
-  opacity: 0.6;
-  margin-top: 0;
+  color: #6b6b6b;
 }
 
 .hint code {
   font-family: inherit;
   font-weight: 600;
+  background: #f1f1ef;
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
 }
 
 .status {
   text-align: center;
-  opacity: 0.75;
-  min-height: 1.5em;
+  font-size: 0.85em;
+  color: #6b6b6b;
+  min-height: 1.4em;
+  margin: 0 0 1.2em;
 }
 
-form {
+/* Composer: bewusst wie ein modernes Chat-Eingabefeld (Gemini/ChatGPT) -
+   eine durchgängige, weiche Pille statt eckiger Formularfelder. Die
+   einzige auffällige Form auf der Seite; alles andere bleibt ruhig. */
+.composer {
   display: flex;
-  flex-direction: column;
-  gap: 0.6em;
+  align-items: flex-end;
+  gap: 0.5em;
+  background: #ffffff;
+  border: 1px solid #e3e2e0;
+  border-radius: 28px;
+  padding: 0.5em 0.5em 0.5em 1em;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-textarea {
-  width: 100%;
-  box-sizing: border-box;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  padding: 0.8em;
-  font-size: 1em;
+.composer:focus-within {
+  border-color: #ff6b35;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(255, 107, 53, 0.12);
+}
+
+.composer textarea {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: inherit;
   font-family: inherit;
-  resize: vertical;
+  font-size: 1rem;
+  line-height: 1.4;
+  padding: 0.55em 0;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
-.row {
-  display: flex;
-  gap: 0.6em;
-  justify-content: flex-end;
+.composer textarea::placeholder {
+  color: #9b9b9b;
 }
 
-select,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
+.model-chip {
+  align-self: center;
+  flex-shrink: 0;
+  border: none;
+  background: #f1f1ef;
+  color: inherit;
+  border-radius: 14px;
+  padding: 0.4em 0.7em;
+  font-size: 0.78em;
   font-weight: 500;
   font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
   cursor: pointer;
+  max-width: 9em;
 }
 
-button:disabled {
+.send-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: #191919;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.send-btn:hover:not(:disabled) {
+  background: #ff6b35;
+}
+
+.send-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
-}
-
-button:hover:not(:disabled) {
-  border-color: #396cd8;
+  opacity: 0.35;
 }
 
 #output {
-  min-height: 4em;
+  min-height: 3em;
   margin-top: 1.5em;
-  padding: 0.8em;
-  border-radius: 8px;
+  padding: 1em 1.2em;
+  border-radius: 16px;
   background-color: #ffffff;
-  border: 1px solid #ccc;
+  border: 1px solid #eeeeec;
+}
+
+/* #output enthält immer die beiden Kind-Elemente (#output-text/-actions),
+   ist also selbst nie :empty - erst wenn BEIDE Kinder leer sind, ist
+   wirklich "noch nichts da". Nur Rahmen zu entfernen reichte nicht: mit
+   min-height/padding/Hintergrund blieb sonst eine leere Box sichtbar. */
+#output:has(#output-text:empty):has(#output-actions:empty) {
+  min-height: 0;
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 #output-text {
@@ -111,18 +174,39 @@ button:hover:not(:disabled) {
   margin-top: 0.8em;
 }
 
+#output-actions button {
+  border: 1px solid #e3e2e0;
+  border-radius: 20px;
+  padding: 0.5em 1.1em;
+  font-family: inherit;
+  font-size: 0.9em;
+  font-weight: 500;
+  background: #ffffff;
+  color: inherit;
+  cursor: pointer;
+}
+
+#output-actions button:hover:not(:disabled) {
+  border-color: #ff6b35;
+}
+
+#output-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .pairing-panel {
   margin-top: 1.5em;
-  padding: 1em;
-  border-radius: 8px;
+  padding: 1.2em;
+  border-radius: 16px;
   background-color: #ffffff;
-  border: 1px solid #ccc;
+  border: 1px solid #eeeeec;
   text-align: center;
 }
 
 .pairing-panel p {
   font-size: 0.9em;
-  opacity: 0.8;
+  color: #6b6b6b;
 }
 
 .pairing-qr {
@@ -148,18 +232,76 @@ button:hover:not(:disabled) {
   word-break: break-all;
 }
 
+.pairing-address-row button {
+  border: 1px solid #e3e2e0;
+  border-radius: 20px;
+  padding: 0.5em 1.1em;
+  font-family: inherit;
+  font-size: 0.9em;
+  font-weight: 500;
+  background: #ffffff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pairing-address-row button:hover {
+  border-color: #ff6b35;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+    color: #ededec;
+    background-color: #191919;
   }
 
-  textarea,
-  select,
-  button,
-  #output {
+  .hint,
+  .status,
+  .pairing-panel p {
+    color: #9b9b9b;
+  }
+
+  .hint code {
+    background: #2a2a2a;
+  }
+
+  .composer {
+    background: #232323;
+    border-color: #3a3a3a;
+  }
+
+  .composer:focus-within {
+    border-color: #ff6b35;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(255, 107, 53, 0.18);
+  }
+
+  .composer textarea::placeholder {
+    color: #767676;
+  }
+
+  .model-chip {
+    background: #2f2f2f;
+  }
+
+  .send-btn {
+    background: #ededec;
+    color: #191919;
+  }
+
+  .send-btn:hover:not(:disabled) {
+    background: #ff6b35;
     color: #ffffff;
-    background-color: #0f0f0f98;
-    border-color: #444;
+  }
+
+  #output,
+  .pairing-panel {
+    background-color: #232323;
+    border-color: #3a3a3a;
+  }
+
+  #output-actions button,
+  .pairing-address-row button {
+    background: #232323;
+    border-color: #3a3a3a;
+    color: inherit;
   }
 }

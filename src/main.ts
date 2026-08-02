@@ -111,6 +111,15 @@ function setOutput(text: string) {
   outputActionsEl.innerHTML = "";
 }
 
+// Lässt das Eingabefeld mit dem Text mitwachsen (bis zum in styles.css
+// gesetzten max-height, danach übernimmt dessen eigenes Scrollen) - der
+// "Gemini-Stil" braucht das, sonst bliebe die Pille bei jeder Zeilenzahl
+// gleich hoch mit abgeschnittenem Text.
+function autosizeTextarea() {
+  promptInput.style.height = "auto";
+  promptInput.style.height = `${promptInput.scrollHeight}px`;
+}
+
 function setStatus(text: string) {
   statusEl.textContent = text;
 }
@@ -246,7 +255,11 @@ function requestServerAddress() {
   );
   promptInput.value = "";
   promptInput.placeholder = "z. B. mein-rechner.tailxxxx.ts.net";
-  sendButton.textContent = "Verbinden";
+  // Icon bleibt (Pfeil passt für "Senden" wie "Verbinden") - nur der
+  // barrierefreie Name ändert sich, damit der Button nicht seine Form
+  // verliert (er ist jetzt ein reiner Icon-Button, kein Text mehr).
+  sendButton.setAttribute("aria-label", "Verbinden");
+  autosizeTextarea();
 }
 
 async function configureAddress() {
@@ -256,8 +269,9 @@ async function configureAddress() {
   storeApiBase(API_BASE);
   promptInput.value = "";
   promptInput.placeholder = "Frag Iris etwas …";
-  sendButton.textContent = "Senden";
+  sendButton.setAttribute("aria-label", "Senden");
   mode = "ask";
+  autosizeTextarea();
   await trySetup();
 }
 
@@ -346,6 +360,18 @@ window.addEventListener("DOMContentLoaded", () => {
       configureAddress();
     } else {
       ask();
+    }
+  });
+
+  promptInput.addEventListener("input", autosizeTextarea);
+
+  // Enter sendet (wie bei Gemini/ChatGPT), Umschalt+Enter fügt einen
+  // Zeilenumbruch ein - sonst bräuchte man für mehrzeilige Prompts die
+  // Maus, nur weil das Feld jetzt einzeilig startet statt mit rows="4".
+  promptInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      el<HTMLFormElement>("prompt-form").requestSubmit();
     }
   });
 
