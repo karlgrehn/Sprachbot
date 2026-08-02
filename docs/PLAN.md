@@ -300,7 +300,7 @@ Ist die Grenze sauber, sind Option 2 und 3 später dieselbe Oberfläche an einer
 - **Aufträge aus fremdem Text ohne Passwortfreigabe**
 - Selbstmodifikation des Kerns — später nur als Plugin-Generierung im Sandbox-Ordner, mit Testsuite als Freigabe-Gate
 - GUI-Automatisierung — nur letzter Fallback
-- Native iOS-App — Thin Clients sind PWAs
+- **Native iOS-App** — Thin Clients sind PWAs. Geprüft und bewusst zurückgestellt: selbst die EU-Web-Distribution (DMA-Pflicht für Apple, direkte Installation ohne App Store) verlangt weiterhin die $99/Jahr Apple-Developer-Mitgliedschaft plus Notarisierung durch Apple — die DMA öffnet nur den Vertriebsweg, nicht die Kostenpflicht. Ergibt erst Sinn, sobald Option 3 (Abo, Abschnitt 3) laufende Einnahmen liefert, die diese Kosten tragen — nicht als Vorabinvestition ohne Nutzerbasis.
 - macOS — eingefroren
 - Eigene Bridges schreiben
 - Inferenz auf Betreiber-Hardware
