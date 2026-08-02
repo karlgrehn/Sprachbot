@@ -201,15 +201,14 @@
     </main>
 
     <script>
-      // Öffentliche Basis-Adresse des Objektspeichers (S3/R2/o. Ä. — siehe
-      // README "Download-Hosting"). Sobald gesetzt, ist das die bevorzugte
-      // Downloadquelle. Bis dahin liest die Seite die Downloads direkt aus
-      // der öffentlichen GitHub-Releases-API (siehe unten) — das
-      // funktioniert nur, solange das Repo öffentlich ist; private Repos
-      // liefern keine öffentlich abrufbaren Release-Assets.
-      const DOWNLOAD_BASE = "";
-      const GITHUB_REPO = "karlgrehn/Sprachbot";
-
+      // Die eigentlichen Downloads laufen über /api/download/<plattform>
+      // (Vercel-Serverless-Funktion, siehe web/api/) — die spricht
+      // serverseitig (mit einem Token, das nie im Browser landet) mit der
+      // GitHub-API und leitet auf die signierte Datei weiter. Dadurch
+      // taucht GitHub auf dieser Seite nirgends auf, und das Repository
+      // kann privat bleiben (siehe README "Downloads ohne öffentliches
+      // Repo"). /api/downloads-info liefert nur die Dateigrößen für die
+      // Anzeige.
       function formatBytes(bytes) {
         if (!bytes) return "";
         const gb = bytes / 1024 ** 3;
@@ -218,15 +217,7 @@
       }
 
       let platform = "windows";
-      // windows/linux: {offline:{url,bytes}} — android: {apk:{url,bytes}}
-      // (eigene Form, weil es dort keine Normal/Offline-Unterscheidung gibt
-      // — Android ist immer ein Thin Client, siehe src-tauri/src/lib.rs).
-      let manifests = {};
-
-      function entryFor(key) {
-        if (key === "android") return manifests.android?.apk;
-        return manifests[key]?.offline;
-      }
+      let manifests = {}; // { windows: {bytes}, linux: {bytes}, android: {bytes} }
 
       function render() {
         const downloadPanel = document.querySelector('[data-panel="download"]');
@@ -249,9 +240,9 @@
 
         const link = document.querySelector("[data-download]");
         const sizeEl = document.querySelector("[data-size]");
-        const entry = entryFor(platform);
+        const entry = manifests[platform];
         if (entry) {
-          link.href = entry.url;
+          link.href = `/api/download/${platform}`;
           link.removeAttribute("aria-disabled");
           sizeEl.textContent = `Größe: ${formatBytes(entry.bytes)}`;
         } else {
@@ -277,57 +268,13 @@
 
       render();
 
-      // Manifeste laden, die der Release-Workflow bei jedem Build ablegt
-      // (iris/manifest-windows.json, iris/manifest-linux.json,
-      // iris/manifest-android.json) — keine fest verdrahteten
-      // Dateinamen/Versionsnummern hier im Frontend. windows/linux
-      // enthalten weiterhin "normal" und "offline"; die Seite zeigt hier
-      // bewusst nur "offline" (fertig eingerichtet, keine Entscheidung
-      // durch die Nutzer:innen nötig).
-      if (DOWNLOAD_BASE) {
-        for (const key of ["windows", "linux", "android"]) {
-          fetch(`${DOWNLOAD_BASE}/iris/manifest-${key}.json`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
-              if (data) {
-                manifests[key] = data;
-                render();
-              }
-            })
-            .catch(() => {});
-        }
-      } else {
-        // Interimslösung, solange kein eigener Objektspeicher eingerichtet
-        // ist (siehe .github/workflows/release.yml, Abschnitt
-        // "publish-release"): liest die Downloads direkt aus der
-        // öffentlichen GitHub-Releases-API. Funktioniert nur, solange das
-        // Repo öffentlich ist — private Repos liefern hier keine
-        // öffentlich abrufbaren Assets, dann bleibt nur noch S3 oben.
-        fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`)
-          .then((r) => (r.ok ? r.json() : []))
-          .then((releases) => {
-            const latest = releases.find((r) => !r.draft);
-            if (!latest) return;
-            const assets = latest.assets || [];
-            const findAsset = (pattern) => assets.find((a) => pattern.test(a.name));
-
-            const winOffline = findAsset(/^Iris-Offline_.*_x64-setup\.exe$/i);
-            const linuxOffline = findAsset(/^Iris-Offline_.*\.AppImage$/i);
-            const androidApk = findAsset(/^Iris\.apk$/i);
-
-            if (winOffline) {
-              manifests.windows = { offline: { url: winOffline.browser_download_url, bytes: winOffline.size } };
-            }
-            if (linuxOffline) {
-              manifests.linux = { offline: { url: linuxOffline.browser_download_url, bytes: linuxOffline.size } };
-            }
-            if (androidApk) {
-              manifests.android = { apk: { url: androidApk.browser_download_url, bytes: androidApk.size } };
-            }
-            render();
-          })
-          .catch(() => {});
-      }
+      fetch("/api/downloads-info")
+        .then((r) => (r.ok ? r.json() : {}))
+        .then((data) => {
+          manifests = data || {};
+          render();
+        })
+        .catch(() => {});
     </script>
   </body>
 </html>
