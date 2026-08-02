@@ -4,6 +4,12 @@ version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+# Seit dem zweiten [[bin]]-Ziel (iris-hub) kann Cargo/Tauri nicht mehr
+# selbst erraten, welches Binary "die App" ist - ohne dieses Feld schlägt
+# der normale `tauri build` mit "failed to find main binary" fehl (echter
+# CI-Fehler, kein Ratefehler). Der release-hub-Job in release.yml wählt
+# iris-hub weiterhin explizit über `--bin iris-hub`, davon unberührt.
+default-run = "iris-app"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
