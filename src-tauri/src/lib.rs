@@ -1,4 +1,4 @@
-mod api;
+pub mod api;
 mod clock;
 mod command;
 mod hardware;
@@ -13,6 +13,10 @@ mod permissions;
 mod postfach;
 mod registry;
 
+// Nur Teil des Builds, wenn das "desktop-gui"-Feature aktiv ist (Default,
+// siehe Cargo.toml) - iris-hub baut ohne dieses Feature und braucht diese
+// Funktion (und damit tauri selbst) nicht.
+#[cfg(feature = "desktop-gui")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // tauri-plugin-shell wird immer initialisiert (siehe Cargo.toml-Kommentar

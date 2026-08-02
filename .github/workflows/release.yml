@@ -15,6 +15,10 @@ name: Release
 # Thin Client" für die bekannten Einschränkungen: selbstsigniert, keine
 # Update-Kontinuität, nur aarch64, nicht auf echtem Gerät verifiziert).
 #
+# Zusätzlich ein kopfloses "Iris-Hub"-Binary (Job "release-hub", kein
+# Fenster/Tauri) für Windows (Testbetrieb) und aarch64-Linux (echter
+# Raspberry Pi) — siehe README "Iris als Hub betreiben".
+#
 # Auslösen: manuell über "Run workflow" im Actions-Tab, oder durch einen
 # Tag-Push (z. B. `git tag v0.1.0 && git push origin v0.1.0`).
 #
@@ -471,6 +475,111 @@ jobs:
           aws s3 cp manifest.json "s3://$S3_BUCKET/iris/manifest-android.json" \
             "${ENDPOINT_ARG[@]}" --content-type application/json
 
+  # --- Iris-Hub: kopfloser Kern ohne Fenster/Tauri, für Server-Betrieb ---
+  # (Raspberry Pi als "Immer-an-Hub", siehe docs/PLAN.md Option 2/3 und
+  # README "Iris als Hub betreiben"). Ein Pi läuft üblicherweise ohne
+  # Bildschirm (Raspberry Pi OS Lite) - eine Tauri-GUI-App würde dort
+  # mangels Fenstersystem gar nicht erst starten. src-tauri/src/bin/
+  # iris_hub.rs ruft denselben api::serve()-Kern direkt auf, ganz ohne
+  # Tauri/GTK-Abhängigkeit (Cargo.toml, Feature "desktop-gui", per
+  # `--no-default-features` abgeschaltet) - dadurch reicht für den
+  # aarch64-Cross-Build (echter Raspberry-Pi-Prozessor) ein einfacher
+  # GCC-Cross-Compiler, keine cross-kompilierten GTK-Bindings.
+  #
+  # windows-latest hier ist die "Testversion auf dem Windows-Laptop" (siehe
+  # Gesprächsverlauf): exakt dasselbe Binary/Verhalten wie später auf dem
+  # Pi, nur x86_64 statt aarch64 - zum Ausprobieren, bevor ein Pi angeschafft
+  # ist.
+  release-hub:
+    needs: release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: ""
+            bin_name: iris-hub.exe
+            asset_name: Iris-Hub-windows-x64.zip
+          - platform: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            bin_name: iris-hub
+            asset_name: Iris-Hub-raspberrypi-aarch64.zip
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: aarch64-Cross-Compiler installieren (nur für den Pi-Build)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Web-Oberfläche bauen (dist/, wird neben das Binary gelegt)
+        run: |
+          npm install
+          npm run build
+
+      - name: Release-Tag bestimmen
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=iris-build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - name: iris-hub bauen
+        shell: bash
+        env:
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          set -euo pipefail
+          cd src-tauri
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --release --no-default-features --bin iris-hub --target "${{ matrix.target }}"
+            BIN_PATH="target/${{ matrix.target }}/release/${{ matrix.bin_name }}"
+          else
+            cargo build --release --no-default-features --bin iris-hub
+            BIN_PATH="target/release/${{ matrix.bin_name }}"
+          fi
+          mkdir -p ../hub-out
+          cp "$BIN_PATH" ../hub-out/
+          cp -r ../dist ../hub-out/dist
+
+      - name: Hub-Ordner zippen
+        # "zip" ist auf windows-latest nicht garantiert vorhanden (anders
+        # als auf ubuntu-Runnern) - 7-Zip dagegen schon, wird weiter oben in
+        # dieser Datei bereits fürs Ollama-Entpacken auf Windows genutzt.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
+            7z a -tzip "${{ matrix.asset_name }}" ./hub-out/* >/dev/null
+          else
+            (cd hub-out && zip -r "../${{ matrix.asset_name }}" .)
+          fi
+
+      - name: Hub zur GitHub-Release hochladen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ steps.tag.outputs.name }}" "${{ matrix.asset_name }}" \
+            --repo "${{ github.repository }}" --clobber
+
   # --- Release veröffentlichen (nicht länger Entwurf) ---
   # tauri-action legt die Release bewusst als Entwurf an (releaseDraft:
   # true) - Entwürfe sind selbst bei einem öffentlichen Repo nicht
@@ -481,7 +590,7 @@ jobs:
   # GitHub-Releases-API, wenn kein S3 konfiguriert ist. Läuft erst, wenn
   # alle Uploads (Windows/Linux/Android) durch sind.
   publish-release:
-    needs: [release, release-android]
+    needs: [release, release-android, release-hub]
     permissions:
       contents: write
     runs-on: ubuntu-22.04

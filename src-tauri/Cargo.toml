@@ -14,6 +14,12 @@ edition = "2021"
 name = "iris_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+# Kopfloser Hub ohne Tauri/Fenster - siehe src/bin/iris_hub.rs. Für
+# Kommandozeilen-/Server-Betrieb (Raspberry Pi, Testbetrieb auf Windows).
+name = "iris-hub"
+path = "src/bin/iris_hub.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -30,10 +36,22 @@ tauri-build = { version = "2", features = [] }
 # capabilities/offline.json diese Permission referenziert.
 offline-bundle = []
 
+# Macht tauri + seine Plugins optional (siehe unten): iris-hub (headless,
+# src/bin/iris_hub.rs) braucht kein Fenster/Webview und keine Sidecars,
+# spricht direkt api::serve() an. Ohne diese Trennung würde JEDER Build
+# der Bibliothek - auch der von iris-hub - transitiv webkit2gtk/gdk (Linux)
+# mitkompilieren, was den Cross-Build für aarch64 (Raspberry Pi) auf einem
+# x86_64-Runner erheblich verkompliziert hätte (GTK-Bindings cross-kompilieren
+# ist deutlich aufwändiger als ein reiner Rust-Cross-Build). api.rs und alle
+# von ihm genutzten Module (mcp, permissions, postfach, registry, ...)
+# hängen ohnehin nie von tauri ab - per echtem grep bestätigt.
+default = ["desktop-gui"]
+desktop-gui = ["dep:tauri", "dep:tauri-plugin-opener", "dep:tauri-plugin-shell"]
+
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-tauri-plugin-shell = "2"
+tauri = { version = "2", features = [], optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
+tauri-plugin-shell = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # rustls statt des Default-Backends (native-tls/OpenSSL): der Android-Build
@@ -45,7 +63,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 sysinfo = "0.32"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors", "fs"] }
-tokio = { version = "1", features = ["net", "sync", "time", "rt"] }
+tokio = { version = "1", features = ["net", "sync", "time", "rt", "rt-multi-thread"] }
 rand = "0.8"
 sha2 = "0.10"
 base64 = "0.22"

@@ -403,6 +403,61 @@ Landingpage).
   Android-Gerät die APK installiert und sich per eingetragener Serveradresse
   tatsächlich verbindet — dafür bräuchte es echte Hardware.
 
+### Iris als Hub betreiben (Raspberry Pi, Testbetrieb auf Windows)
+
+Wer den Laptop nicht rund um die Uhr laufen lassen will, kann den Kern
+stattdessen auf einem eigenen, immer angeschalteten Gerät betreiben — zum
+Beispiel einem Raspberry Pi. Ein Pi läuft normalerweise **ohne Bildschirm**
+(Raspberry Pi OS Lite, nur SSH) — die normale Iris-App ist aber ein
+Tauri-Fenster und würde dort mangels Fenstersystem gar nicht erst starten.
+
+Deshalb gibt es zusätzlich **`iris-hub`**: dasselbe `api::serve()` wie in
+der App (`src-tauri/src/api.rs`), aber als reines Kommandozeilen-Programm
+ganz ohne Tauri/Fenster/Webview (`src-tauri/src/bin/iris_hub.rs`). Der
+`release-hub`-Job in `.github/workflows/release.yml` baut es für zwei
+Ziele und lädt beide in die GitHub-Release:
+
+- **`Iris-Hub-windows-x64.zip`** — zum Ausprobieren auf einem normalen
+  Windows-Rechner (z. B. einem Laptop), **bevor** ein Pi angeschafft ist.
+  Entpacken, `iris-hub.exe` starten, fertig — dasselbe Verhalten wie
+  später auf dem Pi, nur x86_64 statt aarch64.
+- **`Iris-Hub-raspberrypi-aarch64.zip`** — für den echten Raspberry Pi
+  (aarch64/arm64, Pi 4 und neuer). Entpacken, `./iris-hub` ausführen.
+  Für Dauerbetrieb als systemd-Service einrichten (`ExecStart=/pfad/zu/
+  iris-hub`, `WorkingDirectory=/pfad/zum/entpackten/ordner`, `Restart=always`).
+
+Beide ZIPs enthalten den fertigen Frontend-Build (`dist/`) direkt neben
+dem Binary — `iris-hub` liefert darüber dieselbe Oberfläche aus wie die
+App selbst (siehe `dist_dir()` in `iris_hub.rs`: sucht zuerst
+`IRIS_DIST_DIR`, dann einen `dist`-Ordner neben der eigenen Programmdatei).
+
+Danach wie gewohnt per `tailscale serve --bg 47615` erreichbar machen
+(siehe „Thin Client einrichten" oben) — der Hub braucht **zusätzlich**
+eine separat installierte Ollama-Instanz (kein Offline-Bundle für
+aarch64/aus Kapazitätsgründen: ein Raspberry Pi ist für lokale
+4-Bit-7-8B-Inferenz spürbar langsam; ein kleineres Modell wie `gemma3:1b`
+ist realistischer).
+
+**Technischer Kniff, der das erst ermöglicht hat:** `tauri` und seine
+Plugins sind in `src-tauri/Cargo.toml` jetzt eine **optionale** Abhängigkeit
+hinter dem Feature `desktop-gui` (per Default an — die normale App-Build
+ändert sich dadurch nicht). `iris-hub` baut mit `--no-default-features`,
+zieht dadurch gar nicht erst Tauri/GTK/WebKit rein — dadurch reicht für den
+aarch64-Cross-Build ein einfacher `gcc-aarch64-linux-gnu`, statt GTK-Bindings
+cross-kompilieren zu müssen (deutlich aufwändiger, siehe die Mühe beim
+Android-Build oben).
+
+**Nicht Teil dieser Änderung: der bezahlte „Option 3"-Server aus
+`docs/PLAN.md`** (Abschnitt 3 und Meilenstein M6 — Mehrbenutzer-Trennung,
+Conduit/Bridges, Stripe-Abo, Lizenzschlüssel). Ein Pi als privater
+Immer-an-Hub für die eigene Nutzung ist etwas anderes als ein
+mehrbenutzerfähiger, kostenpflichtiger Serverdienst — Letzteres ist laut
+Plan ein eigener, großer Meilenstein, der zudem vor der ersten Auslieferung
+an fremde Nutzer:innen eine anwaltliche Prüfung der AGPL-Grenze braucht
+(`docs/PLAN.md`, Abschnitt 11). Dieser Schritt baut nur die technische
+Grundlage (kopfloser, Pi-fähiger Kern) — das Abo-/Lizenzmodell bräuchte
+eine eigene, gesonderte Planung.
+
 ## Architektur (Kurzfassung)
 
 Drei Schichten (Details in [`docs/PLAN.md`](docs/PLAN.md), Abschnitt 5):
