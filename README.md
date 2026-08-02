@@ -152,36 +152,45 @@ die breite Nutzerschaft unnötige Komplexität; das Manifest enthält beide
 Einträge weiterhin (für einen möglichen späteren „erweiterte Optionen"-Link),
 aktuell wird nur `offline` verlinkt.
 
-### Repo bleibt privat — Downloads laufen über eigenen Objektspeicher
+### Downloads ohne öffentliches Repo (Download-Proxy)
 
 Auf Wunsch bleibt der Quellcode privat (`docs/PLAN.md`: „Closed Source.
 Ausgeliefert werden Binaries, kein Quellcode.") — GitHub Releases sind bei
-privaten Repos nicht öffentlich abrufbar, deshalb lädt der Workflow beide
-Varianten stattdessen zu einem **S3-kompatiblen Objektspeicher** hoch
-(AWS S3, Cloudflare R2, Backblaze B2, o. Ä. — deine Wahl, dein Konto; das
-kann diese Sitzung nicht für dich einrichten). Nötige Repo-Secrets:
+privaten Repos aber nicht öffentlich abrufbar. Statt eines separaten
+Objektspeichers (S3/R2/Supabase — an der 50-MB-Datei-Grenze der
+Supabase-Free-Stufe gescheitert, Pro-Plan kostet Geld) übernimmt ein
+kleiner **Vercel-Serverless-Proxy** (`web/api/`) diese Rolle:
 
-| Secret | Bedeutung |
-|---|---|
-| `S3_BUCKET` | Bucket-Name |
-| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Zugangsdaten |
-| `S3_ENDPOINT` | Leer lassen für echtes AWS S3; sonst die Endpunkt-URL (z. B. R2) |
-| `S3_PUBLIC_BASE_URL` | Öffentliche Basis-Adresse, unter der Dateien abrufbar sind |
+- `web/api/download/[platform].js` holt das passende Release-Asset per
+  authentifiziertem GitHub-API-Aufruf und leitet auf die von GitHub
+  signierte, zeitlich begrenzte CDN-URL weiter — funktioniert dadurch
+  auch bei **privatem** Repo. Kein Byte läuft durch die Funktion selbst
+  (bei den 800+ MB großen Offline-Installern würde das echte
+  Durchschleifen an Vercels Ausführungszeit-/Antwortgrößen-Limits
+  scheitern).
+- `web/api/downloads-info.js` liefert nur die Dateigrößen für die Anzeige.
+- Das Token bleibt ausschließlich serverseitig (Vercel-Umgebungsvariable)
+  — im Browser oder im Seitenquelltext taucht GitHub nirgends auf.
 
-Ohne diese Secrets läuft der Build durch, der Upload-Schritt wird nur
-übersprungen. **Wichtig:** die Bucket-Berechtigung für öffentliches Lesen
-muss auf Bucket-Ebene eingerichtet werden (Bucket-Policy / „Public Bucket"-
-Schalter je nach Anbieter) — das Skript setzt keine Objekt-ACLs, weil R2
-(anders als AWS S3) diese gar nicht unterstützt.
+**Einmalige Einrichtung (kann nur der Kontoinhaber selbst tun):**
 
-Nach jedem Build liegen unter `<S3_PUBLIC_BASE_URL>/iris/manifest-windows.json`
-und `.../manifest-linux.json` die aktuellen Download-Adressen + Dateigrößen
-für beide Varianten — die Landingpage liest genau das, keine fest
-verdrahteten Dateinamen.
+1. GitHub → Settings → Developer settings → **Fine-grained tokens** →
+   neuen Token erzeugen, beschränkt auf **dieses Repository**, Berechtigung
+   **Contents: Read-only** (mehr wird nicht gebraucht).
+2. In den Vercel-Projekteinstellungen (Settings → Environment Variables)
+   eine Variable `GITHUB_DOWNLOAD_TOKEN` mit diesem Token-Wert anlegen.
+3. Danach das Repo auf privat stellen: GitHub → Settings → General →
+   Danger Zone → „Change visibility".
 
-**Um das Repo tatsächlich auf privat zu stellen:** GitHub → Settings →
-General → Danger Zone → „Change visibility". Das kann keines meiner
-Werkzeuge für dich übernehmen.
+Ohne gesetzten Token antwortet `/api/download/*` mit einer klaren
+Fehlermeldung statt abzustürzen; die Landingpage zeigt dann
+„Wird geladen …" dauerhaft an, bis der Token gesetzt ist.
+
+**Alternative (weiterhin unterstützt, aber nicht mehr der Standardweg):**
+ein S3-kompatibler Objektspeicher — siehe die `S3_*`-Secrets in
+`.github/workflows/release.yml`. Falls `S3_BUCKET` gesetzt ist, lädt der
+Workflow zusätzlich dorthin hoch; die Landingpage nutzt aktuell aber den
+Proxy oben, nicht diesen Pfad.
 
 ### Vercel: nur die Landingpage, nicht die App selbst
 
@@ -189,18 +198,17 @@ Vercel baut und hostet Web-Apps/statische Seiten, keine nativen
 Desktop-Programme. `web/index.html` ist eine schlichte, fertige
 Download-Landingpage (reines HTML/CSS, kein Build-Schritt, **kein Link auf
 das Quellcode-Repository**) mit einem einzigen Download-Button pro
-Plattform (kein Normal/Offline-Entscheidungszwang für die Nutzerschaft).
-Um sie auf Vercel zu deployen:
+Plattform (kein Normal/Offline-Entscheidungszwang für die Nutzerschaft) —
+die Downloads selbst laufen über den Proxy oben (`web/api/`). Um das Ganze
+auf Vercel zu deployen:
 
 1. Vercel-Connector unter den claude.ai-Verbindungseinstellungen
    autorisieren (das kann diese Sitzung nicht selbst tun).
 2. Repo in Vercel importieren, **Root Directory** auf `web` setzen,
-   kein Build-Command nötig — oder die Datei direkt hochladen, wenn das
-   Repo privat ist und nicht mit Vercel verknüpft werden soll.
-3. In `web/index.html` die Konstante `DOWNLOAD_BASE` auf
-   `S3_PUBLIC_BASE_URL` setzen, sobald der Objektspeicher eingerichtet ist
-   — vorher bleibt der Download-Button bewusst deaktiviert
-   („Noch kein Download eingerichtet").
+   kein Build-Command nötig — Vercel erkennt `web/api/*.js` automatisch
+   als Serverless-Funktionen.
+3. `GITHUB_DOWNLOAD_TOKEN` wie oben beschrieben als Umgebungsvariable
+   setzen.
 
 ### Behobener Build-Fehler: `shell:allow-execute` in beiden Varianten
 

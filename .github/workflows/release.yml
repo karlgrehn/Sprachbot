@@ -18,23 +18,19 @@ name: Release
 # Auslösen: manuell über "Run workflow" im Actions-Tab, oder durch einen
 # Tag-Push (z. B. `git tag v0.1.0 && git push origin v0.1.0`).
 #
-# Öffentliche Downloads sollen langfristig über S3-kompatiblen
-# Objektspeicher laufen, nicht über GitHub Releases (siehe README,
-# Abschnitt "Download-Hosting") — das Repo kann dadurch privat bleiben.
-# Nötige Secrets, falls eingerichtet: S3_BUCKET, S3_ACCESS_KEY_ID,
-# S3_SECRET_ACCESS_KEY, S3_PUBLIC_BASE_URL, optional S3_ENDPOINT (leer
-# lassen für echtes AWS S3; sonst z. B. die R2-Endpunkt-URL). Ohne diese
-# Secrets läuft der Build durch, aber der S3-Upload-Schritt wird
-# übersprungen.
+# Der Workflow veröffentlicht am Ende eine echte (nicht mehr Entwurf-)
+# GitHub-Release mit allen Dateien (Windows/Linux normal+offline,
+# Android-APK). Öffentlich abrufbar sind diese Downloads über einen
+# kleinen Vercel-Serverless-Proxy (web/api/download/[platform].js), der
+# server-seitig (mit einem Token, das nie im Browser landet) auf die
+# GitHub-API zugreift und weiterleitet - das funktioniert dadurch auch
+# bei privatem Repo, siehe README "Downloads ohne öffentliches Repo".
 #
-# Solange S3 nicht eingerichtet ist, veröffentlicht der Workflow
-# zusätzlich eine echte (nicht mehr Entwurf-)GitHub-Release mit allen
-# Dateien (Windows/Linux normal+offline, Android-APK) - die Landingpage
-# (web/index.html) liest diese über die öffentliche GitHub-Releases-API,
-# wenn kein S3_PUBLIC_BASE_URL gesetzt ist. Das funktioniert nur, solange
-# das Repo öffentlich ist (private Repos liefern keine öffentlich
-# abrufbaren Release-Assets) - sobald das Repo privat gestellt wird, ist
-# S3 der einzige verbleibende Downloadweg.
+# Alternative, weiterhin unterstützt (aber nicht der aktuelle Standardweg
+# der Landingpage): S3-kompatibler Objektspeicher. Secrets, falls
+# eingerichtet: S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY,
+# S3_PUBLIC_BASE_URL, optional S3_ENDPOINT. Ohne diese Secrets läuft der
+# Build durch, der S3-Upload-Schritt wird nur übersprungen.
 
 on:
   workflow_dispatch:
