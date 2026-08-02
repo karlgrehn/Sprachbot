@@ -15,6 +15,12 @@
         display: flex;
         justify-content: center;
       }
+      /* Ohne diese Regel gewinnt jede eigene "display"-Regel (z. B.
+         a.button, .variant-choice) gegen das UA-Standardverhalten von
+         [hidden] - Elemente mit hidden="" blieben sonst sichtbar. */
+      [hidden] {
+        display: none !important;
+      }
       main {
         max-width: 640px;
         padding: 8vh 1.5em;
@@ -60,6 +66,44 @@
         font-weight: 600;
         font-size: 0.85em;
         opacity: 0.9;
+      }
+      .variant-choice {
+        display: flex;
+        gap: 1em;
+        margin-top: 1em;
+        text-align: left;
+      }
+      .variant-option {
+        flex: 1;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        padding: 1em;
+      }
+      .variant-option .size {
+        font-weight: 600;
+        font-size: 0.85em;
+        opacity: 0.9;
+        margin: 0.3em 0;
+      }
+      .variant-option .variant-note {
+        font-size: 0.8em;
+        opacity: 0.75;
+        margin: 0 0 0.8em;
+      }
+      .variant-option .variant-note.storage-warning {
+        opacity: 1;
+        color: #b3521e;
+        font-weight: 600;
+      }
+      .variant-option a.button {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 0;
+      }
+      @media (max-width: 480px) {
+        .variant-choice {
+          flex-direction: column;
+        }
       }
       a.button {
         display: inline-block;
@@ -124,10 +168,14 @@
         .platform-tabs button,
         .download-card,
         .pwa-hint,
-        .apple-card {
+        .apple-card,
+        .variant-option {
           color: #ffffff;
           background-color: #0f0f0f98;
           border-color: #444;
+        }
+        .variant-option .variant-note.storage-warning {
+          color: #ffab7a;
         }
         .platform-tabs button[aria-pressed="true"] {
           border-color: #6a94e6;
@@ -157,8 +205,35 @@
         <p data-desktop-text>
           Eine Datei, alles enthalten. Keine weitere Installation nötig.
         </p>
+
+        <!-- Android/Fallback: ein einziger Button, direkter Download. -->
         <p class="size" data-size></p>
         <a class="button" data-download href="#">Herunterladen</a>
+
+        <!-- Windows/Linux: erst ein Button, danach die Wahl zwischen
+             Offline (alles dabei, groß) und Online (klein, braucht
+             separat installiertes Ollama) - siehe Skript unten. -->
+        <div class="variant-choice" data-variant-choice hidden>
+          <div class="variant-option">
+            <strong>Online-Version</strong>
+            <p class="size" data-size-online></p>
+            <p class="variant-note">
+              Klein und schnell heruntergeladen — braucht eine separat
+              installierte <a href="https://ollama.com/" target="_blank" rel="noopener">Ollama</a>-Instanz.
+            </p>
+            <a class="button" data-download-online href="#">Herunterladen</a>
+          </div>
+          <div class="variant-option">
+            <strong>Offline-Version</strong>
+            <p class="size" data-size-offline></p>
+            <p class="variant-note" data-storage-note>
+              Alles enthalten (auch das Sprachmodell), keine weitere
+              Installation nötig — braucht dafür deutlich mehr Speicherplatz.
+            </p>
+            <a class="button" data-download-offline href="#">Herunterladen</a>
+          </div>
+        </div>
+
         <p class="apk-warning" data-android-warning hidden>
           Android zeigt beim Installieren eine Warnung („Unbekannte
           Quelle" / „App nicht von Play Store"). Das ist normal — Iris
@@ -217,12 +292,64 @@
       }
 
       let platform = "windows";
-      let manifests = {}; // { windows: {bytes}, linux: {bytes}, android: {bytes} }
+      let manifests = {}; // { "windows-offline": {bytes}, "windows-online": {bytes}, ..., android: {bytes} }
+      // Nur für windows/linux: erst ein Button, danach Online/Offline-Wahl
+      // (siehe web/index.html-Kommentar oben der Karte). Zurückgesetzt bei
+      // jedem Tab-Wechsel, sonst würde ein späterer render()-Aufruf (z. B.
+      // wenn /api/downloads-info erst nach dem Klick antwortet) die schon
+      // aufgeklappte Wahl wieder einklappen.
+      let variantRevealed = false;
+
+      function updateStorageHint(offlineEntry) {
+        const note = document.querySelector("[data-storage-note]");
+        if (!note) return;
+        const base =
+          "Alles enthalten (auch das Sprachmodell), keine weitere Installation nötig — braucht dafür deutlich mehr Speicherplatz.";
+        note.textContent = base;
+        note.classList.remove("storage-warning");
+        // navigator.storage.estimate() liefert die vom Browser zugestandene
+        // Speicherquote (grobe, bewusst ungenaue Schätzung des Browsers,
+        // kein exakter freier Speicherplatz) - wo verfügbar, nur als
+        // zusätzlicher, klar gekennzeichneter Hinweis, kein hartes Gate.
+        if (!offlineEntry || !("storage" in navigator) || !navigator.storage?.estimate) return;
+        navigator.storage
+          .estimate()
+          .then(({ quota }) => {
+            if (typeof quota !== "number" || quota <= 0) return;
+            if (quota < offlineEntry.bytes * 1.2) {
+              const freeGb = quota / 1024 ** 3;
+              note.textContent = `${base} Geschätzt verfügbar: ~${freeGb.toFixed(1)} GB — das könnte knapp werden (grobe Schätzung des Browsers, nicht exakt).`;
+              note.classList.add("storage-warning");
+            }
+          })
+          .catch(() => {});
+      }
+
+      function renderVariants() {
+        for (const variant of ["online", "offline"]) {
+          const entry = manifests[`${platform}-${variant}`];
+          const link = document.querySelector(`[data-download-${variant}]`);
+          const sizeEl = document.querySelector(`[data-size-${variant}]`);
+          if (entry) {
+            link.href = `/api/download/${platform}-${variant}`;
+            link.removeAttribute("aria-disabled");
+            sizeEl.textContent = `Größe: ${formatBytes(entry.bytes)}`;
+          } else {
+            link.href = "#";
+            link.setAttribute("aria-disabled", "true");
+            sizeEl.textContent = "Wird geladen …";
+          }
+        }
+        updateStorageHint(manifests[`${platform}-offline`]);
+      }
 
       function render() {
         const downloadPanel = document.querySelector('[data-panel="download"]');
         const applePanel = document.querySelector('[data-panel="apple"]');
         const androidWarning = document.querySelector("[data-android-warning]");
+        const initialButton = document.querySelector("[data-download]");
+        const initialSize = document.querySelector("[data-size]");
+        const variantChoice = document.querySelector("[data-variant-choice]");
 
         if (platform === "apple") {
           downloadPanel.hidden = true;
@@ -238,27 +365,55 @@
             ? "Eine APK-Datei, alles enthalten. Verbindet sich mit einem Iris-Rechner im selben Netzwerk (Adresse einmalig in der App eintragen)."
             : "Eine Datei, alles enthalten. Keine weitere Installation nötig.";
 
-        const link = document.querySelector("[data-download]");
-        const sizeEl = document.querySelector("[data-size]");
-        const entry = manifests[platform];
-        if (entry) {
-          link.href = `/api/download/${platform}`;
-          link.removeAttribute("aria-disabled");
-          sizeEl.textContent = `Größe: ${formatBytes(entry.bytes)}`;
-        } else {
-          link.href = "#";
-          link.setAttribute("aria-disabled", "true");
-          sizeEl.textContent = "Wird geladen …";
+        if (platform === "android") {
+          variantChoice.hidden = true;
+          initialButton.hidden = false;
+          initialSize.hidden = false;
+          const entry = manifests.android;
+          if (entry) {
+            initialButton.href = "/api/download/android";
+            initialButton.removeAttribute("aria-disabled");
+            initialSize.textContent = `Größe: ${formatBytes(entry.bytes)}`;
+          } else {
+            initialButton.href = "#";
+            initialButton.setAttribute("aria-disabled", "true");
+            initialSize.textContent = "Wird geladen …";
+          }
+          return;
         }
+
+        // windows/linux: erster Klick auf "Herunterladen" deckt erst die
+        // Online/Offline-Wahl auf, statt sofort etwas herunterzuladen.
+        initialSize.hidden = true;
+        initialButton.hidden = variantRevealed;
+        variantChoice.hidden = !variantRevealed;
+        if (!variantRevealed) {
+          initialButton.href = "#";
+          initialButton.removeAttribute("aria-disabled");
+        }
+        renderVariants();
       }
 
       document.querySelector("[data-download]").addEventListener("click", (e) => {
+        if (platform === "windows" || platform === "linux") {
+          e.preventDefault();
+          variantRevealed = true;
+          render();
+          return;
+        }
         if (e.currentTarget.getAttribute("aria-disabled") === "true") e.preventDefault();
       });
+
+      for (const variant of ["online", "offline"]) {
+        document.querySelector(`[data-download-${variant}]`).addEventListener("click", (e) => {
+          if (e.currentTarget.getAttribute("aria-disabled") === "true") e.preventDefault();
+        });
+      }
 
       document.querySelectorAll(".platform-tabs button").forEach((button) => {
         button.addEventListener("click", () => {
           platform = button.dataset.platform;
+          variantRevealed = false;
           document
             .querySelectorAll(".platform-tabs button")
             .forEach((b) => b.setAttribute("aria-pressed", String(b === button)));

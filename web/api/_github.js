@@ -6,9 +6,15 @@
 // Server-Code spricht (authentifiziert) mit der GitHub-API.
 const REPO = "karlgrehn/Sprachbot";
 
+// "-offline" bündelt Ollama + Modell (kein weiterer Install nötig, aber
+// deutlich größer - siehe web/index.html). "-online" ist nur die App
+// selbst, erwartet eine separat installierte Ollama-Instanz (viel kleiner).
+// Android hat nur einen Weg (reiner Thin Client, kein Ollama auf dem Handy).
 const ASSET_PATTERNS = {
-  windows: /^Iris-Offline_.*_x64-setup\.exe$/i,
-  linux: /^Iris-Offline_.*\.AppImage$/i,
+  "windows-offline": /^Iris-Offline_.*_x64-setup\.exe$/i,
+  "windows-online": /^Iris_.*_x64-setup\.exe$/i,
+  "linux-offline": /^Iris-Offline_.*\.AppImage$/i,
+  "linux-online": /^Iris_.*\.AppImage$/i,
   android: /^Iris\.apk$/i,
 };
 
