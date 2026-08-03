@@ -54,6 +54,35 @@ PKCE: Entdeckung der Endpunkte (RFC 9728 + RFC 8414), Systembrowser öffnen,
 Code über einen kurzlebigen lokalen Redirect-Listener auf Port 47616
 abfangen, gegen ein Token tauschen.
 
+## Cloud-Backend als Alternative zu Ollama
+
+`src-tauri/src/llm.rs` gibt Iris ein zweites Backend für Antworten: einen
+API-Key eines Online-Anbieters, im Chat genannt statt über ein
+Einstellungsfeld — der Anbieter ergibt sich aus dem Key-Format (`sk-ant-…` =
+Anthropic, sonst `sk-…` = OpenAI), kein Auswahlmenü nötig. Grund: nicht jede
+Person will sich Ollama selbst einrichten, gerade auf schwacher Hardware.
+
+Beide Richtungen sind rote Aktionen (`permissions.rs`) und gegenseitig
+gesperrt, damit nie beide Backends gleichzeitig fehlen:
+
+- **API-Key hinzufügen** (`llm.api_key.hinzufuegen`): wird vor dem Speichern
+  mit einer echten Testanfrage geprüft — ein falscher Key fällt sofort auf,
+  nicht erst bei der nächsten echten Frage.
+- **Ollama deinstallieren** (`llm.ollama.deinstallieren`): nur anfragbar,
+  solange ein geprüfter API-Key vorliegt.
+- **API-Key entfernen**: nur möglich, solange Ollama wieder aktiv ist —
+  sonst stünde kurzzeitig gar kein Modell zur Verfügung.
+- **Ollama installieren** (`llm.ollama.installieren`): diese Aktion gibt es
+  nur, solange Ollama gerade deaktiviert ist.
+
+Ist ein Key hinterlegt, versucht `/api/ask` zuerst den Online-Anbieter;
+schlägt die Anfrage fehl und Ollama ist noch aktiv, übernimmt Ollama still
+(„es muss immer ein Modell zur Verfügung stehen"). Ist Ollama bereits
+deaktiviert und der Anbieter nicht erreichbar, bekommt der Nutzer eine klare
+Fehlermeldung mit dem Hinweis, „installiere Ollama" zu sagen. `/help` zeigt
+dazu nur eine einzige Statuszeile (welches Backend gerade antwortet) statt
+mehrerer Erklärabsätze.
+
 ## Status
 
 **M1 — Kern, lokales Modell, Aktions-Registry: fertig, ungetestet am echten Gerät.**

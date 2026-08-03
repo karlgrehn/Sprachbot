@@ -3,6 +3,7 @@ mod clock;
 mod command;
 mod hardware;
 mod http_client;
+mod llm;
 mod mcp;
 mod message;
 mod oauth;

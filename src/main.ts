@@ -71,6 +71,8 @@ interface StatusResponse {
   recommended_model: string;
   ollama_available: boolean;
   installed_models: string[];
+  llm_backend: "ollama" | "cloud";
+  cloud_provider: string | null;
 }
 
 interface PermissionRequest {
@@ -91,6 +93,7 @@ interface GrantResponse {
   granted_at_unix: number;
   tools: string[] | null;
   connect_error: string | null;
+  llm_note: string | null;
 }
 
 function el<T extends HTMLElement>(id: string): T {
@@ -157,6 +160,8 @@ function showPermissionButton(request: PermissionRequest) {
         );
       } else if (granted.connect_error) {
         setOutput(`✓ Erteilt: ${request.anzeigetext}. Verbindung fehlgeschlagen: ${granted.connect_error}`);
+      } else if (granted.llm_note) {
+        setOutput(granted.llm_note);
       } else {
         setOutput(`✓ Erteilt: ${request.anzeigetext}.`);
       }
@@ -210,6 +215,7 @@ async function showPairingIfAvailable() {
 }
 
 function populateModelSelect(installed: string[], recommended: string) {
+  modelSelect.disabled = false;
   modelSelect.innerHTML = "";
 
   const options = installed.length > 0 ? installed : [recommended];
@@ -225,6 +231,18 @@ function populateModelSelect(installed: string[], recommended: string) {
   if (options.includes(recommended)) {
     modelSelect.value = recommended;
   }
+}
+
+// Im Cloud-Backend gibt es keine lokale Modellwahl (das Modell ist pro
+// Anbieter fest, siehe llm.rs::Provider::default_model) — die Chip zeigt
+// stattdessen nur, welcher Anbieter gerade antwortet.
+function showCloudProviderChip(provider: string) {
+  modelSelect.innerHTML = "";
+  const option = document.createElement("option");
+  option.value = provider;
+  option.textContent = provider;
+  modelSelect.appendChild(option);
+  modelSelect.disabled = true;
 }
 
 // Der Kern startet als eigener HTTP-Dienst nebenläufig zum Fenster; ein
@@ -289,6 +307,15 @@ async function init() {
   const status: StatusResponse = await statusResp.json();
 
   showPairingIfAvailable();
+
+  // Läuft gerade über einen Online-Anbieter (API-Key hinterlegt): der
+  // Ollama-Status ist dann kein Warnsignal mehr, sondern erwartet — die
+  // Statuszeile soll das nicht wie einen Fehler behandeln.
+  if (status.llm_backend === "cloud" && status.cloud_provider) {
+    showCloudProviderChip(status.cloud_provider);
+    setStatus(`Bereit. Antworten laufen über ${status.cloud_provider}.`);
+    return;
+  }
 
   // Der Button bleibt in jedem Fall bedienbar: Registry-Aktionen,
   // Berechtigungen, Postfach und /help brauchen kein Ollama (siehe

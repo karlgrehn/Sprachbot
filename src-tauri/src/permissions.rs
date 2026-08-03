@@ -27,6 +27,9 @@ pub struct PermissionDef {
 /// wie der Registry-Eintrag selbst.
 pub const WHATSAPP_KOPPELN: &str = "bridge.whatsapp.koppeln";
 pub const MCP_SERVER_VERBINDEN: &str = "mcp.server.verbinden";
+pub const LLM_API_KEY_HINZUFUEGEN: &str = "llm.api_key.hinzufuegen";
+pub const LLM_OLLAMA_DEINSTALLIEREN: &str = "llm.ollama.deinstallieren";
+pub const LLM_OLLAMA_INSTALLIEREN: &str = "llm.ollama.installieren";
 
 pub const PERMISSIONS: &[PermissionDef] = &[
     PermissionDef {
@@ -36,6 +39,18 @@ pub const PERMISSIONS: &[PermissionDef] = &[
     PermissionDef {
         id: MCP_SERVER_VERBINDEN,
         anzeigetext: "Iris darf sich mit diesem MCP-Server verbinden und dessen Werkzeuge benutzen",
+    },
+    PermissionDef {
+        id: LLM_API_KEY_HINZUFUEGEN,
+        anzeigetext: "Iris darf diesen API-Key speichern und ab jetzt für Antworten nutzen",
+    },
+    PermissionDef {
+        id: LLM_OLLAMA_DEINSTALLIEREN,
+        anzeigetext: "Iris nutzt ab jetzt nur noch den Online-Anbieter — Ollama wird nicht mehr gebraucht",
+    },
+    PermissionDef {
+        id: LLM_OLLAMA_INSTALLIEREN,
+        anzeigetext: "Iris nutzt ab jetzt wieder Ollama",
     },
 ];
 

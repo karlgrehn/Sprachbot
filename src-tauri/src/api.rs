@@ -17,7 +17,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
 use crate::command::{CommandResult, PermissionRequest};
-use crate::{hardware, mcp, message, ollama, permissions, postfach, registry};
+use crate::{hardware, llm, mcp, message, ollama, permissions, postfach, registry};
 
 /// Muss mit `API_BASE` in src/main.ts übereinstimmen.
 pub const PORT: u16 = 47615;
@@ -28,6 +28,7 @@ struct AppState {
     permissions: permissions::SharedPermissions,
     postfach: postfach::SharedPostfach,
     mcp: mcp::SharedMcp,
+    llm: llm::SharedLlm,
 }
 
 /// Downstream-Dienst (Ollama, MCP-Server) nicht erreichbar oder fehlerhaft
@@ -43,18 +44,26 @@ struct StatusResponse {
     recommended_model: &'static str,
     ollama_available: bool,
     installed_models: Vec<String>,
+    /// "cloud", solange ein geprüfter API-Key hinterlegt ist, sonst
+    /// "ollama" — bestimmt, was die Oberfläche als Status/Modellauswahl
+    /// zeigt (siehe main.ts::init).
+    llm_backend: &'static str,
+    cloud_provider: Option<&'static str>,
 }
 
-async fn status_handler() -> Json<StatusResponse> {
+async fn status_handler(State(state): State<AppState>) -> Json<StatusResponse> {
     let recommendation = hardware::recommend_model();
     let models_result = ollama::list_installed_models().await;
     let ollama_available = models_result.is_ok();
+    let llm_status = llm::status(&state.llm);
     Json(StatusResponse {
         ram_gb: recommendation.ram_gb,
         tier: recommendation.tier,
         recommended_model: recommendation.model,
         ollama_available,
         installed_models: models_result.unwrap_or_default(),
+        llm_backend: if llm_status.cloud_provider.is_some() { "cloud" } else { "ollama" },
+        cloud_provider: llm_status.cloud_provider,
     })
 }
 
@@ -150,17 +159,36 @@ struct GrantResponse {
     /// ("ab jetzt läuft es ohne Rückfrage", docs/PLAN.md Abschnitt 2).
     tools: Option<Vec<String>>,
     connect_error: Option<String>,
+    /// gesetzt, wenn das Erteilen eine llm.rs-Aktion war (API-Key geprüft
+    /// oder Ollama-Backend gewechselt) — analog zu tools/connect_error
+    /// oben, nur für das zweite LLM-Backend.
+    llm_note: Option<String>,
 }
 
 async fn grant_handler(
     State(state): State<AppState>,
     JsonExtract(req): JsonExtract<GrantRequest>,
 ) -> Result<Json<GrantResponse>, (StatusCode, String)> {
+    // Die beiden Ollama-Wechsel-Aktionen sind nur solange anfragbar, wie
+    // ihre Gegenseite es erlaubt (docs-Absicht "es muss immer ein LLM zur
+    // Verfügung stehen") — hier noch einmal geprüft, falls die Anfrage nicht
+    // über den Chat-Weg in llm::handle_command lief.
+    if req.id == permissions::LLM_OLLAMA_DEINSTALLIEREN && !llm::has_valid_key(&state.llm) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Ohne funktionierenden API-Key kann Ollama nicht deinstalliert werden.".to_string(),
+        ));
+    }
+    if req.id == permissions::LLM_OLLAMA_INSTALLIEREN && llm::ollama_active(&state.llm) {
+        return Err((StatusCode::BAD_REQUEST, "Ollama ist schon aktiv.".to_string()));
+    }
+
     let granted = permissions::grant(&state.permissions, &req.id, req.scope.clone())
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     let mut tools = None;
     let mut connect_error = None;
+    let mut llm_note = None;
     if granted.id == permissions::MCP_SERVER_VERBINDEN {
         if let Some(url) = &granted.scope {
             match mcp::connect(&state.mcp, url).await {
@@ -168,6 +196,35 @@ async fn grant_handler(
                 Err(e) => connect_error = Some(e),
             }
         }
+    } else if granted.id == permissions::LLM_API_KEY_HINZUFUEGEN {
+        if let Some(key) = &granted.scope {
+            match llm::add_key(&state.llm, key).await {
+                Ok(provider) => {
+                    llm_note = Some(format!(
+                        "API-Key geprüft ({provider}). Sag \"deinstalliere Ollama\", falls du es nicht mehr brauchst."
+                    ))
+                }
+                Err(e) => {
+                    // Fehlgeschlagene Prüfung nicht als erteilt stehen lassen,
+                    // sonst würde ein erneuter Versuch mit demselben Key beim
+                    // nächsten Mal fälschlich als "schon erteilt" gelten.
+                    permissions::revoke(&state.permissions, &granted.id, granted.scope.as_deref());
+                    llm_note = Some(format!("API-Key konnte nicht bestätigt werden: {e}. Ollama bleibt aktiv."));
+                }
+            }
+        }
+    } else if granted.id == permissions::LLM_OLLAMA_DEINSTALLIEREN {
+        llm::set_ollama_active(&state.llm, false);
+        llm_note = Some(
+            "Ollama ist jetzt deaktiviert. Du kannst es bei Bedarf selbst deinstallieren, um Speicherplatz freizugeben."
+                .to_string(),
+        );
+    } else if granted.id == permissions::LLM_OLLAMA_INSTALLIEREN {
+        llm::set_ollama_active(&state.llm, true);
+        llm_note = Some(
+            "Ollama ist jetzt wieder aktiv. Falls es deinstalliert war: neu installieren und ein Modell laden (siehe README)."
+                .to_string(),
+        );
     }
 
     Ok(Json(GrantResponse {
@@ -176,6 +233,7 @@ async fn grant_handler(
         granted_at_unix: granted.granted_at_unix,
         tools,
         connect_error,
+        llm_note,
     }))
 }
 
@@ -288,6 +346,20 @@ fn help_command(state: &AppState, prompt: &str) -> Option<CommandResult> {
         }));
     }
     zeilen.push(String::new());
+    let llm_status = llm::status(&state.llm);
+    match llm_status.cloud_provider {
+        Some(provider) => zeilen.push(format!(
+            "Antworten laufen über {provider} (API-Key hinterlegt).{}",
+            if llm_status.ollama_active { "" } else { " Ollama ist deaktiviert." }
+        )),
+        // Nur hier, wo noch kein Key hinterlegt ist, ist der Hinweis
+        // wirklich nötig — danach würde er nur noch stören.
+        None => zeilen.push(
+            "Antworten laufen über Ollama. Eigenen API-Key im Chat nennen, um stattdessen einen Online-Anbieter zu nutzen."
+                .to_string(),
+        ),
+    }
+    zeilen.push(String::new());
     zeilen.push(
         "Sag Iris einfach, was du willst — z. B. \"antworte ab jetzt kurz\", \"mach das rückgängig\", \
          \"verbinde mein WhatsApp\" oder \"verbinde mich mit https://beispiel.de/mcp\"."
@@ -345,20 +417,50 @@ async fn ask_handler(
     if let Some(result) = postfach::handle_command(&state.postfach, &req.prompt) {
         return Ok(Json(result.into()));
     }
+    if let Some(result) = llm::handle_command(&state.llm, &req.prompt) {
+        return Ok(Json(result.into()));
+    }
 
     let instruction = registry::current_instruction(&state.verbosity);
     let full_prompt = format!("{instruction}\n\n{}", req.prompt);
 
-    ollama::generate(&req.model, &full_prompt)
-        .await
-        .map(|response| {
-            Json(AskResponse {
-                response,
-                command_handled: false,
-                permission_request: None,
-            })
-        })
-        .map_err(bad_gateway)
+    let response = match llm::current_backend(&state.llm) {
+        llm::Backend::Ollama => ollama::generate(&req.model, &full_prompt).await.map_err(bad_gateway)?,
+        llm::Backend::Cloud { provider, key } => {
+            match llm::cloud_generate(provider, &key, &full_prompt).await {
+                Ok(text) => text,
+                Err(cloud_err) => {
+                    // "Es muss immer ein LLM zur Verfügung stehen": solange
+                    // Ollama noch aktiv ist, übernimmt es hier still, statt
+                    // den Nutzer mit einem Fehler abzuspeisen. Erst wenn
+                    // auch das fehlt (oder scheitert), gibt es die Meldung
+                    // inklusive Hinweis auf "installiere Ollama".
+                    if llm::ollama_active(&state.llm) {
+                        match ollama::generate(&req.model, &full_prompt).await {
+                            Ok(text) => format!(
+                                "(Online-Anbieter gerade nicht erreichbar, lokale Antwort verwendet.)\n\n{text}"
+                            ),
+                            Err(ollama_err) => {
+                                return Err(bad_gateway(format!(
+                                    "Online-Anbieter fehlgeschlagen ({cloud_err}); Ollama ebenfalls nicht erreichbar ({ollama_err})."
+                                )))
+                            }
+                        }
+                    } else {
+                        return Err(bad_gateway(format!(
+                            "Der Online-Anbieter antwortet nicht: {cloud_err}. Sag \"installiere Ollama\", um wieder ein Modell nutzen zu können."
+                        )));
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(Json(AskResponse {
+        response,
+        command_handled: false,
+        permission_request: None,
+    }))
 }
 
 /// `dist_dir`: die gebaute Oberfläche (Vite-Output). Wird als Fallback nach
@@ -399,6 +501,7 @@ pub async fn serve(dist_dir: PathBuf) {
         permissions: permissions::new_state(),
         postfach: postfach::new_state(),
         mcp: mcp::new_state(),
+        llm: llm::new_state(),
     };
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", PORT))
         .await
