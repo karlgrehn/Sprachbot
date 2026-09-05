@@ -1,0 +1,52 @@
+:root{
+  --bg:#fafafa; --fg:#1a1a1a; --muted:#767676; --card:#ffffff;
+  --border:#e5e5e5; --accent:#2563eb; --good:#16a34a; --bad:#dc2626;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#111113; --fg:#f0f0f0; --muted:#9a9a9a; --card:#1a1a1d; --border:#2a2a2e; }
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+#app{max-width:480px; margin:0 auto; padding:24px 20px 60px;}
+.topbar{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;}
+.topbar h1{font-size:20px; font-weight:600; margin:0;}
+.stats{font-size:13px; color:var(--muted);}
+.subtitle{color:var(--muted); font-size:14px; margin:16px 0 12px;}
+.hidden{display:none;}
+.grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.tile{
+  background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:20px 14px; text-align:center; cursor:pointer; transition:transform .1s;
+}
+.tile:active{transform:scale(0.97);}
+.tile .flag{font-size:28px; display:block; margin-bottom:8px;}
+.tile .name{font-size:15px; font-weight:500;}
+.tile .sub{font-size:12px; color:var(--muted); margin-top:4px;}
+.back{
+  background:none; border:none; color:var(--accent); font-size:14px;
+  padding:0; margin-bottom:8px; cursor:pointer;
+}
+.quiz-progress{height:6px; background:var(--border); border-radius:3px; overflow:hidden; margin:12px 0 24px;}
+.quiz-bar{height:100%; background:var(--accent); width:0%; transition:width .2s;}
+.quiz-card{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:32px 20px; text-align:center;}
+.quiz-word{font-size:26px; font-weight:600; margin-bottom:24px;}
+.options{display:flex; flex-direction:column; gap:10px;}
+.opt{
+  padding:14px; border-radius:10px; border:1px solid var(--border);
+  background:var(--bg); font-size:16px; cursor:pointer; text-align:left;
+}
+.opt:active{transform:scale(0.99);}
+.opt.correct{border-color:var(--good); background:rgba(22,163,74,0.12); color:var(--good);}
+.opt.wrong{border-color:var(--bad); background:rgba(220,38,38,0.12); color:var(--bad);}
+.feedback{min-height:20px; margin-top:16px; font-size:14px; color:var(--muted);}
+.done-card{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:32px 20px; text-align:center; margin-top:40px;}
+.done-card h2{margin-top:0;}
+button.primary, button.ghost{
+  display:block; width:100%; margin-top:12px; padding:14px; border-radius:10px;
+  font-size:15px; cursor:pointer; border:1px solid var(--border);
+}
+button.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+button.ghost{background:none; color:var(--fg);}

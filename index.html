@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprachbot</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <h1>Sprachbot</h1>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <section id="view-home" class="view">
+    <p class="subtitle">Wähle eine Sprache</p>
+    <div id="langGrid" class="grid"></div>
+  </section>
+
+  <section id="view-categories" class="view hidden">
+    <button class="back" data-back="home">&larr; Sprachen</button>
+    <p class="subtitle" id="catSubtitle"></p>
+    <div id="catGrid" class="grid"></div>
+  </section>
+
+  <section id="view-quiz" class="view hidden">
+    <button class="back" data-back="categories">&larr; Kategorien</button>
+    <div class="quiz-progress"><div id="quizBar" class="quiz-bar"></div></div>
+    <div id="quizCard" class="quiz-card">
+      <div class="quiz-word" id="quizWord"></div>
+      <div id="quizOptions" class="options"></div>
+      <div id="quizFeedback" class="feedback"></div>
+    </div>
+  </section>
+
+  <section id="view-done" class="view hidden">
+    <div class="done-card">
+      <h2>Fertig!</h2>
+      <p id="doneScore"></p>
+      <button id="btnRetry" class="primary">Nochmal üben</button>
+      <button id="btnHome" class="ghost">Zur Startseite</button>
+    </div>
+  </section>
+
+</div>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
